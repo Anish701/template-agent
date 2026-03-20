@@ -9,6 +9,7 @@ from typing import Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import create_react_agent
 
@@ -19,6 +20,25 @@ from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
 logger = get_python_logger(log_level=settings.PYTHON_LOG_LEVEL)
+
+
+def _build_chat_model():
+    """Construct the LangChain chat model from settings (Gemini or OpenAI-compatible)."""
+    if settings.use_openai_compatible_llm:
+        base_url = settings.OPENAI_COMPAT_BASE_URL.strip()
+        logger.info(
+            "Using OpenAI-compatible LLM at %s (model=%s)",
+            base_url,
+            settings.OPENAI_COMPAT_MODEL,
+        )
+        return ChatOpenAI(
+            model=settings.OPENAI_COMPAT_MODEL,
+            temperature=0.3,
+            base_url=base_url,
+            api_key=settings.OPENAI_COMPAT_API_KEY,
+        )
+    logger.info("Using Google Gemini (gemini-2.5-flash)")
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
 
 
 async def initialize_database() -> None:
@@ -160,8 +180,7 @@ async def get_template_agent(
                 AppExceptionCode.PRODUCTION_MCP_CONNECTION_ERROR,
             )
 
-    # Initialize the language model
-    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
+    model = _build_chat_model()
 
     if not enable_checkpointing:
         # Create agent without checkpointing for streaming-only operations

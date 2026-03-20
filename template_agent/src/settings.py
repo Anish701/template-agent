@@ -56,6 +56,25 @@ class Settings(BaseSettings):
         default=False, json_schema_extra={"env": "USE_INMEMORY_SAVER"}
     )
 
+    # Local OpenAI-compatible LLM (RamaLama, Ollama, vLLM): set USE_OPENAI_COMPAT_LLM=true
+    # and OPENAI_COMPAT_BASE_URL. Default false = Google Gemini + GOOGLE_APPLICATION_CREDENTIALS_CONTENT.
+    USE_OPENAI_COMPAT_LLM: bool = Field(
+        default=False,
+        json_schema_extra={"env": "USE_OPENAI_COMPAT_LLM"},
+    )
+    OPENAI_COMPAT_BASE_URL: Optional[str] = Field(
+        default=None,
+        json_schema_extra={"env": "OPENAI_COMPAT_BASE_URL"},
+    )
+    OPENAI_COMPAT_API_KEY: str = Field(
+        default="not-needed",
+        json_schema_extra={"env": "OPENAI_COMPAT_API_KEY"},
+    )
+    OPENAI_COMPAT_MODEL: str = Field(
+        default="local",
+        json_schema_extra={"env": "OPENAI_COMPAT_MODEL"},
+    )
+
     # Database Configuration
     POSTGRES_USER: str = Field(
         default="pgvector", json_schema_extra={"env": "POSTGRES_USER"}
@@ -164,6 +183,13 @@ class Settings(BaseSettings):
         """
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
+    @property
+    def use_openai_compatible_llm(self) -> bool:
+        """OpenAI-compatible stack only when explicitly enabled and base URL is set."""
+        if not self.USE_OPENAI_COMPAT_LLM:
+            return False
+        return bool((self.OPENAI_COMPAT_BASE_URL or "").strip())
+
 
 def validate_config(settings: Settings) -> None:
     """Validate configuration settings.
@@ -196,6 +222,16 @@ def validate_config(settings: Settings) -> None:
         )
         raise AppException(
             f"PYTHON_LOG_LEVEL must be one of {valid_log_levels}, got {settings.PYTHON_LOG_LEVEL}",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+
+    if settings.USE_OPENAI_COMPAT_LLM and not (
+        settings.OPENAI_COMPAT_BASE_URL or ""
+    ).strip():
+        msg = "OPENAI_COMPAT_BASE_URL is required when USE_OPENAI_COMPAT_LLM=true"
+        logger.error(msg)
+        raise AppException(
+            msg,
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
 
