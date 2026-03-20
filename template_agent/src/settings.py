@@ -225,9 +225,10 @@ def validate_config(settings: Settings) -> None:
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
 
-    if settings.USE_OPENAI_COMPAT_LLM and not (
-        settings.OPENAI_COMPAT_BASE_URL or ""
-    ).strip():
+    if (
+        settings.USE_OPENAI_COMPAT_LLM
+        and not (settings.OPENAI_COMPAT_BASE_URL or "").strip()
+    ):
         msg = "OPENAI_COMPAT_BASE_URL is required when USE_OPENAI_COMPAT_LLM=true"
         logger.error(msg)
         raise AppException(
