@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import google.auth
 import pytest
 from deepagents import SubAgent, create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -14,6 +13,7 @@ from langfuse import Langfuse
 from langgraph.checkpoint.memory import MemorySaver
 
 from template_agent.src.core.backend import get_backend
+from template_agent.utils.google_creds import initialize_google_genai
 
 from llm_judge import LLMJudge
 from mock_tools import MOCK_TOOLS
@@ -50,14 +50,16 @@ def workspace_dir():
 @pytest.fixture(scope="session")
 def model():
     """Create Gemini model with credentials."""
-    credentials, project = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
+    # Initialize Google credentials from environment
+    initialize_google_genai()
+
+    # Check if credentials are available
+    if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        pytest.skip("Google Cloud credentials not available - skipping agent tests")
+
     return ChatGoogleGenerativeAI(
         model=MODEL_NAME,
         temperature=MODEL_TEMPERATURE,
-        credentials=credentials,
-        project=project,
     )
 
 
