@@ -107,12 +107,14 @@ def pytest_generate_tests(metafunc):
             eval_id = eval_case["id"]
             description = eval_case.get("description", f"eval-{eval_id}")
 
-            test_cases.append({
-                "eval_id": eval_id,
-                "description": description,
-                "eval_case": eval_case,
-                "skill_name": skill_config["skill_name"],
-            })
+            test_cases.append(
+                {
+                    "eval_id": eval_id,
+                    "description": description,
+                    "eval_case": eval_case,
+                    "skill_name": skill_config["skill_name"],
+                }
+            )
             ids.append(f"eval-{eval_id}")
 
         metafunc.parametrize(

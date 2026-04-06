@@ -75,11 +75,13 @@ def tracer():
 @pytest.fixture
 def langfuse_client():
     """Langfuse client (optional, requires env vars)."""
-    if all([
-        os.getenv("LANGFUSE_PUBLIC_KEY"),
-        os.getenv("LANGFUSE_SECRET_KEY"),
-        os.getenv("LANGFUSE_BASE_URL"),
-    ]):
+    if all(
+        [
+            os.getenv("LANGFUSE_PUBLIC_KEY"),
+            os.getenv("LANGFUSE_SECRET_KEY"),
+            os.getenv("LANGFUSE_BASE_URL"),
+        ]
+    ):
         return Langfuse()
     return None
 

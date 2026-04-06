@@ -38,14 +38,16 @@ def create_judge_prompt(assertion: str, output: str, context: Optional[Dict]) ->
         if context.get("skill_name"):
             sections.append(f"Skill: {context['skill_name']}")
 
-    sections.extend([
-        "",
-        "Evaluate strictly but fairly. Provide:",
-        "VERDICT: YES or NO",
-        "EVIDENCE: Quote or describe specific evidence",
-        "CONFIDENCE: 0.0 to 1.0",
-        "REASONING: Brief explanation",
-    ])
+    sections.extend(
+        [
+            "",
+            "Evaluate strictly but fairly. Provide:",
+            "VERDICT: YES or NO",
+            "EVIDENCE: Quote or describe specific evidence",
+            "CONFIDENCE: 0.0 to 1.0",
+            "REASONING: Brief explanation",
+        ]
+    )
 
     return "\n".join(sections)
 

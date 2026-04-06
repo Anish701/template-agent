@@ -20,7 +20,6 @@ repos:
         args: [--fix]
         exclude: ^tests/
       - id: ruff-format
-        exclude: ^tests/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.16.1

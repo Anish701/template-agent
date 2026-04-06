@@ -9,7 +9,7 @@ def calculate_bmi(
 ) -> float:
     """Calculate BMI from height and weight."""
     height_m = height_cm / 100
-    bmi = weight_kg / (height_m ** 2)
+    bmi = weight_kg / (height_m**2)
     return round(bmi, 2)
 
 
