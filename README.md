@@ -32,7 +32,7 @@ The [template-mcp-server](https://github.com/redhat-data-and-ai/template-mcp-ser
 | `/v1/feedback` | POST | Record feedback |
 
 ```bash
-curl -X POST http://localhost:8081/v1/stream \
+curl -X POST http://localhost:5002/v1/stream \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello", "thread_id": "t1", "user_id": "u1", "stream_tokens": true}'
 ```
