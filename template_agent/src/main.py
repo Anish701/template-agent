@@ -128,9 +128,8 @@ def main() -> None:
             uvicorn_config["ssl_keyfile"] = settings.AGENT_SSL_KEYFILE
             uvicorn_config["ssl_certfile"] = settings.AGENT_SSL_CERTFILE
             logger.info(
-                "Starting server with SSL",
-                ssl_keyfile=settings.AGENT_SSL_KEYFILE,
-                ssl_certfile=settings.AGENT_SSL_CERTFILE,
+                f"Starting server with SSL keyfile={settings.AGENT_SSL_KEYFILE}"
+                f" certfile={settings.AGENT_SSL_CERTFILE}"
             )
 
         uvicorn.run(**uvicorn_config)
@@ -161,7 +160,7 @@ def run() -> None:
         sys.exit(0)
     except Exception as e:
         # This should rarely be reached due to handle_startup_error
-        logger.error("Server failed to start", error=str(e), exc_info=True)
+        logger.error(f"Server failed to start: {e}", exc_info=True)
         sys.exit(1)
 
 
