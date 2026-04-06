@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import google.auth
 import pytest
 from deepagents import SubAgent, create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -57,10 +58,19 @@ def model():
     if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
         pytest.skip("Google Cloud credentials not available - skipping agent tests")
 
-    return ChatGoogleGenerativeAI(
-        model=MODEL_NAME,
-        temperature=MODEL_TEMPERATURE,
-    )
+    # Use the same pattern as agent.py
+    try:
+        credentials, project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return ChatGoogleGenerativeAI(
+            model=MODEL_NAME,
+            temperature=MODEL_TEMPERATURE,
+            credentials=credentials,
+            project=project,
+        )
+    except google.auth.exceptions.DefaultCredentialsError:
+        pytest.skip("Google Cloud credentials not available - skipping agent tests")
 
 
 # ============================================================================
