@@ -187,8 +187,21 @@ async def get_template_agent(sso_token: str | None = None):
             config = _parse_agent_frontmatter(agent_file)
             name = config.get("name", agent_file.stem)
 
+            # Add model if specified
+            model_name = config.get("model")
+            model = None
+            if model_name:
+                logger.info(f"Subagent '{name}' using model: {model_name}")
+                model = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    temperature=0,
+                    credentials=credentials,
+                    project=project,
+                )
+
             sa: SubAgent = SubAgent(
                 name=name,
+                model=model,
                 description=config.get("description", ""),
                 system_prompt=config.get("body", ""),
             )
