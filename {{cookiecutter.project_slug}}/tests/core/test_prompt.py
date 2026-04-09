@@ -18,4 +18,4 @@ class TestPrompt:
     def test_get_system_prompt_no_template_vars(self):
         """Test that no unresolved template variables remain."""
         prompt = get_system_prompt()
-        assert "{{" not in prompt
+        assert ("{" * 2) not in prompt

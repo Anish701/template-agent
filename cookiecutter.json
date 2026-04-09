@@ -1,0 +1,7 @@
+{
+  "org": "example-org",
+  "agent_name": "my-agent",
+  "project_slug": "agent",
+  "project_description": "AI agent workspace generated from the platform template",
+  "python_package": "template_agent"
+}

@@ -27,12 +27,13 @@ _PASSTHROUGH_VARS = ("HOME", "USER", "LANG", "LC_ALL", "TZ", "TERM")
 
 
 def _base_python() -> str:
-    """Resolve the base (non-venv) Python so the agent venv is independent."""
-    if sys.prefix != sys.base_prefix:
-        candidate = Path(sys.base_prefix) / "bin" / "python3"
-        if candidate.exists():
-            return str(candidate)
-    return sys.executable
+    """Interpreter used to create the isolated agent venv under ``$TMPDIR``.
+    Always use the same Python as this process. Resolving ``sys.base_prefix`` to
+    a system ``python3`` breaks on images where the app venv is Python 3.12 but
+    ``/usr/bin/python3`` is still an older runtime (e.g. UBI9), which then fails
+    packages that require ``requires-python >= 3.11``.
+    """
+    return str(Path(sys.executable).resolve())
 
 
 def _ensure_venv(root_dir: Path, pyproject: Path) -> Path:

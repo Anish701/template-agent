@@ -1,3 +1,4 @@
+{% raw %}
 BMI REPORT TEMPLATE
 ===================
 
@@ -28,3 +29,4 @@ TONE GUIDELINES
 - Never use words like "bad" or "failing" about someone's BMI
 - Focus on actionable steps, not criticism
 - Acknowledge that BMI is one metric among many
+{% endraw %}

@@ -23,14 +23,22 @@ jobs:
       with:
         version: "latest"
 
+    - name: Install cookiecutter and render template
+      run: |
+        pip install cookiecutter
+        cookiecutter . --no-input -o /tmp/rendered
+
     - name: Set up virtual env
+      working-directory: /tmp/rendered/agent
       run: uv venv --python ${{ matrix.python-version }}
 
     - name: Install dependencies
+      working-directory: /tmp/rendered/agent
       run: |
         uv pip install -e ".[dev]"
 
     - name: Run tests with coverage
+      working-directory: /tmp/rendered/agent
       env:
         GOOGLE_APPLICATION_CREDENTIALS_CONTENT: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       run: |
@@ -39,7 +47,7 @@ jobs:
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
       with:
-        file: ./coverage.xml
+        file: /tmp/rendered/agent/coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false

@@ -9,6 +9,9 @@ from pathlib import Path
 
 _CONFIG_DIR = Path(__file__).parent.parent.parent / "agent_config"
 
+# Built without literal brace pairs so Cookiecutter does not parse this file as Jinja.
+_DATE_PLACEHOLDER = "{" * 2 + "current_date" + "}" * 2
+
 
 def get_current_date() -> str:
     """Get the current date in a formatted string.
@@ -23,11 +26,11 @@ def get_system_prompt() -> str:
     """Load the system prompt from ``system-prompt.md``.
 
     Reads the markdown template from ``agent_config/system-prompt.md``
-    and replaces ``{{current_date}}`` with today's date.
+    and replaces the ``current_date`` placeholder with today's date.
 
     Returns:
         The fully rendered system prompt string.
     """
     template_path = _CONFIG_DIR / "system-prompt.md"
     template = template_path.read_text()
-    return template.replace("{{current_date}}", get_current_date())
+    return template.replace(_DATE_PLACEHOLDER, get_current_date())
