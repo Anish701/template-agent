@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     )
 
     # MCP Server Configuration
+    MCP_ENABLED: bool = Field(
+        default=True,
+        json_schema_extra={
+            "env": "MCP_ENABLED",
+            "description": "When false, skip MCP client initialization (no tools from MCP).",
+        },
+    )
     MCP_SERVER_NAME: str = Field(
         default="template-mcp-server",
         json_schema_extra={"env": "MCP_SERVER_NAME"},
