@@ -180,9 +180,13 @@ async def get_template_agent(sso_token: str | None = None):
     tool_by_name = {t.name: t for t in tools}
     skills_base = CONFIG_DIR / "skills"
 
-    # Main agent skills — flat directory under skills/
-    main_skills_dir = skills_base / "client-intake"
-    main_skills_path = [str(main_skills_dir)] if main_skills_dir.exists() else []
+    # Main agent skills — one subdirectory per skill (registry materializes <skill>/SKILL.md)
+    main_skills_path: list[str] = []
+    if skills_base.is_dir():
+        for skill_dir in sorted(p for p in skills_base.iterdir() if p.is_dir()):
+            if (skill_dir / "SKILL.md").is_file():
+                main_skills_path.append(str(skill_dir))
+                logger.info(f"Main agent skill loaded: {skill_dir}")
 
     subagents_config: list[SubAgent] | None = None
     if agents_dir.is_dir():
@@ -249,10 +253,8 @@ async def get_template_agent(sso_token: str | None = None):
     system_prompt = get_system_prompt()
     logger.info("Loaded system prompt from agent_config/system-prompt.md")
 
-    if main_skills_path:
-        logger.info(f"Main agent skills: {main_skills_dir}")
-    else:
-        logger.warning(f"Main agent skills directory not found: {main_skills_dir}")
+    if not main_skills_path:
+        logger.warning(f"No skill directories with SKILL.md under {skills_base}")
 
     backend = get_backend()
 
@@ -286,7 +288,7 @@ async def get_template_agent(sso_token: str | None = None):
             model=model,
             system_prompt=system_prompt,
             skills=main_skills_path,
-            tools=[],
+            tools=tools,
             subagents=subagents_config,
             backend=backend,
             checkpointer=checkpointer,
