@@ -9,8 +9,9 @@ data:
   PYTHON_LOG_LEVEL: "INFO"
   USE_INMEMORY_SAVER: "false"
   LANGFUSE_TRACING_ENVIRONMENT: "production"
-  MCP_SERVER_NAME: "template-mcp-server"
-  MCP_SERVER_URL: "https://template-mcp-server.ns.svc:8443/mcp/"
-  MCP_TRANSPORT_PROTOCOL: "streamable_http"
+  # MCP servers are defined in template_agent/agent_config/mcp_servers.json
+  # (baked into the image at /app/template_agent/agent_config/mcp_servers.json).
+  # To override, mount a ConfigMap/Secret at a custom path and set:
+  # MCP_SERVERS_CONFIG: "/app/config/mcp_servers.json"
   MCP_CONNECTION_TIMEOUT: "30"
-  MCP_SSL_VERIFY: "false"
+  SSO_CALLBACK_URL: ""

@@ -5,6 +5,7 @@ including initialization, configuration, and agent creation with MCP tools,
 skills, subagents, and memory.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -72,86 +73,116 @@ async def get_template_agent(sso_token: str | None = None):
     Raises:
         Exception: If there are issues with database connections or agent setup.
     """
-    # Initialize MCP client and get tools (optional — disable with MCP_ENABLED=false)
+    # Initialize MCP client and get tools from all enabled servers
     tools: list = []
 
-    if not settings.MCP_ENABLED:
-        logger.info("MCP disabled (MCP_ENABLED=false); skipping MCP initialization")
-    else:
-        logger.info(f"Attempting to connect to MCP server at {settings.MCP_SERVER_URL}")
-        logger.info(f"MCP server name: {settings.MCP_SERVER_NAME}")
-        logger.info(f"MCP transport protocol: {settings.MCP_TRANSPORT_PROTOCOL}")
-        logger.info(f"MCP connection timeout: {settings.MCP_CONNECTION_TIMEOUT}s")
-        logger.info(f"SSO authentication: {'Yes' if sso_token else 'No'}")
+    mcp_defs = settings.mcp_servers
+    logger.info(
+        f"MCP connection timeout: {settings.MCP_CONNECTION_TIMEOUT}s | "
+        f"SSO authentication: {'Yes' if sso_token else 'No'} | "
+        f"Enabled servers: {list(mcp_defs.keys()) or '(none)'}"
+    )
 
-        try:
-            import asyncio
+    _MAX_CONCURRENT_MCP = 5
 
-            async def connect_with_timeout():
-                server_config: dict = {
-                    "url": settings.MCP_SERVER_URL,
-                    "transport": settings.MCP_TRANSPORT_PROTOCOL,
-                    "headers": {"Authorization": f"Bearer {sso_token}"}
-                    if sso_token
-                    else {},
-                }
+    def _build_server_config(
+        name: str,
+        defn: dict[str, Any],
+        default_token: str | None,
+    ) -> dict:
+        url = defn["url"]
+        transport = defn.get("transport", "streamable_http")
+        ssl_verify = defn.get("ssl_verify", True)
 
-                if not settings.MCP_SSL_VERIFY:
+        wants_auth = defn.get("auth", True)
+        token = default_token if wants_auth else None
+
+        config: dict = {
+            "url": url,
+            "transport": transport,
+            "headers": {"Authorization": f"Bearer {token}"} if token else {},
+        }
+        if not ssl_verify:
+            _verify = False  # noqa: F841 — captured below
+            config["httpx_client_factory"] = (
+                lambda _v=False, **kwargs: httpx.AsyncClient(  # nosec B501
+                    verify=_v, **kwargs
+                )
+            )
+        logger.info(
+            f"MCP server '{name}' configured: {url} "
+            f"(transport={transport}, ssl_verify={ssl_verify}, "
+            f"auth={'sso' if token else 'none'})"
+        )
+        return config
+
+    server_configs: dict[str, dict] = {
+        name: _build_server_config(name, defn, sso_token)
+        for name, defn in mcp_defs.items()
+    }
+
+    if server_configs:
+        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_MCP)
+
+        async def _try_single_server(srv_name: str, srv_cfg: dict) -> list:
+            """Connect to one MCP server; return tools or empty on failure."""
+            async with semaphore:
+                try:
+                    client = MultiServerMCPClient({srv_name: srv_cfg})
+                    srv_tools = await asyncio.wait_for(
+                        client.get_tools(),
+                        timeout=settings.MCP_CONNECTION_TIMEOUT,
+                    )
+                    logger.info(
+                        f"MCP server '{srv_name}': loaded {len(srv_tools)} tools"
+                    )
+                    return srv_tools
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"MCP server '{srv_name}': timeout after "
+                        f"{settings.MCP_CONNECTION_TIMEOUT}s"
+                    )
+                except Exception:
+                    logger.error(
+                        f"MCP server '{srv_name}': connection failed",
+                        exc_info=True,
+                    )
+            return []
+
+        results = await asyncio.gather(
+            *(
+                _try_single_server(name, cfg)
+                for name, cfg in server_configs.items()
+            )
+        )
+
+        seen_tool_names: set[str] = set()
+        for server_tools in results:
+            for tool in server_tools:
+                tname = getattr(tool, "name", None)
+                if tname and tname in seen_tool_names:
                     logger.warning(
-                        "SSL certificate verification disabled for MCP connection"
+                        f"Duplicate MCP tool '{tname}' — "
+                        f"keeping first occurrence, skipping duplicate"
                     )
-                    server_config["httpx_client_factory"] = (
-                        lambda **kwargs: httpx.AsyncClient(verify=False, **kwargs)  # nosec B501
-                    )
+                    continue
+                if tname:
+                    seen_tool_names.add(tname)
+                tools.append(tool)
 
-                client = MultiServerMCPClient({settings.MCP_SERVER_NAME: server_config})
-                return await client.get_tools()
+        logger.info(f"Total MCP tools loaded across all servers: {len(tools)}")
+    else:
+        logger.warning("No MCP servers enabled — agent will run without MCP tools")
 
-            tools = await asyncio.wait_for(
-                connect_with_timeout(), timeout=settings.MCP_CONNECTION_TIMEOUT
-            )
-            logger.info(
-                f"Successfully connected to MCP server and loaded {len(tools)} tools"
-            )
-            logger.info(f"Available tools: {[tool.name for tool in tools]}")
-        except asyncio.TimeoutError:
-            error_msg = (
-                f"Timeout connecting to MCP server at {settings.MCP_SERVER_URL} "
-                f"after {settings.MCP_CONNECTION_TIMEOUT}s. "
-                f"Server may be down or unreachable."
-            )
-            logger.error(error_msg)
-
-            if settings.USE_INMEMORY_SAVER:
-                logger.warning("Running in local development mode without MCP tools")
-                tools = []
-            else:
-                logger.critical(error_msg)
-                raise AppException(
-                    error_msg,
-                    AppExceptionCode.PRODUCTION_MCP_CONNECTION_ERROR,
-                )
-        except Exception as e:
-            logger.error(
-                f"Failed to connect to MCP server at {settings.MCP_SERVER_URL}",
-                exc_info=True,
-            )
-            logger.error(f"MCP connection error type: {type(e).__name__}")
-            logger.error(f"MCP connection error details: {str(e)}")
-
-            if settings.USE_INMEMORY_SAVER:
-                logger.warning("Running in local development mode without MCP tools")
-                tools = []
-            else:
-                error_msg = (
-                    f"Failed to connect to required MCP server at {settings.MCP_SERVER_URL}. "
-                    f"Error: {type(e).__name__}: {str(e)}"
-                )
-                logger.critical(error_msg)
-                raise AppException(
-                    error_msg,
-                    AppExceptionCode.PRODUCTION_MCP_CONNECTION_ERROR,
-                )
+    if not tools and not settings.USE_INMEMORY_SAVER:
+        logger.critical(
+            "No MCP tools loaded and in-memory saver is disabled — "
+            "at least one MCP server must be reachable in production"
+        )
+        raise AppException(
+            "No MCP tools loaded. Check mcp_servers.json and server connectivity.",
+            AppExceptionCode.PRODUCTION_MCP_CONNECTION_ERROR,
+        )
 
     # Initialize the language model with service account credentials
     import google.auth

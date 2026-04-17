@@ -5,7 +5,10 @@ BaseSettings for environment variable loading, validation, and default
 value handling for the template agent service.
 """
 
-from typing import Optional
+import json
+from functools import cached_property
+from pathlib import Path
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from pydantic import Field
@@ -23,6 +26,43 @@ try:
 except Exception as e:
     # Log error but don't fail - environment variables might be set directly
     logger.warning(f"Could not load .env file: {e}")
+
+_REQUIRED_SERVER_FIELDS = {"url"}
+_MAX_MCP_SERVERS = 20
+
+
+def _resolve_mcp_config_path(env_override: str) -> Path | None:
+    """Return the resolved config path, or None when the fallback is missing."""
+    if env_override:
+        resolved = Path(env_override).resolve()
+        if not resolved.is_file():
+            raise AppException(
+                f"MCP_SERVERS_CONFIG points to a missing file: "
+                f"{env_override} (resolved: {resolved})",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+        return resolved
+
+    fallback = (
+        Path(__file__).resolve().parent.parent
+        / "agent_config"
+        / "mcp_servers.json"
+    )
+    return fallback if fallback.is_file() else None
+
+
+def _validate_mcp_entry(name: str, cfg: Any) -> bool:
+    """Validate a single MCP server entry. Returns True if valid."""
+    if not isinstance(cfg, dict):
+        logger.warning(f"MCP server '{name}': entry is not a dict — skipped")
+        return False
+    missing = _REQUIRED_SERVER_FIELDS - cfg.keys()
+    if missing:
+        raise AppException(
+            f"MCP server '{name}' missing required fields: {missing}",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+    return True
 
 
 class Settings(BaseSettings):
@@ -96,36 +136,21 @@ class Settings(BaseSettings):
         json_schema_extra={"env": "GOOGLE_APPLICATION_CREDENTIALS_CONTENT"},
     )
 
-    # MCP Server Configuration
-    MCP_ENABLED: bool = Field(
-        default=True,
+    # MCP Server Configuration (JSON-based — define N servers in one file)
+    MCP_SERVERS_CONFIG: str = Field(
+        default="",
         json_schema_extra={
-            "env": "MCP_ENABLED",
-            "description": "When false, skip MCP client initialization (no tools from MCP).",
+            "env": "MCP_SERVERS_CONFIG",
+            "description": (
+                "Path to an mcp_servers.json file that declares all MCP "
+                "servers.  Falls back to agent_config/mcp_servers.json "
+                "when empty."
+            ),
         },
-    )
-    MCP_SERVER_NAME: str = Field(
-        default="template-mcp-server",
-        json_schema_extra={"env": "MCP_SERVER_NAME"},
-    )
-    MCP_SERVER_URL: str = Field(
-        default="http://localhost:5001/mcp/",
-        json_schema_extra={"env": "MCP_SERVER_URL"},
-    )
-    MCP_TRANSPORT_PROTOCOL: str = Field(
-        default="streamable_http",
-        json_schema_extra={"env": "MCP_TRANSPORT_PROTOCOL"},
     )
     MCP_CONNECTION_TIMEOUT: int = Field(
         default=30,
         json_schema_extra={"env": "MCP_CONNECTION_TIMEOUT"},
-    )
-    MCP_SSL_VERIFY: bool = Field(
-        default=False,
-        json_schema_extra={
-            "env": "MCP_SSL_VERIFY",
-            "description": "Enable SSL certificate verification for MCP connections",
-        },
     )
 
     # Request Logging Configuration
@@ -158,6 +183,66 @@ class Settings(BaseSettings):
         },
     )
 
+    @cached_property
+    def mcp_servers(self) -> dict[str, dict[str, Any]]:
+        """Load and cache MCP server definitions from the JSON config file.
+
+        Reads ``mcp_servers.json`` once, validates each entry, and returns
+        only servers where ``"enabled"`` is explicitly ``true``.  Servers
+        without an ``enabled`` field default to **disabled** (opt-in).
+
+        Falls back to the baked-in ``agent_config/mcp_servers.json`` only
+        when ``MCP_SERVERS_CONFIG`` is empty.  If ``MCP_SERVERS_CONFIG``
+        is set but the file does not exist, an error is raised to avoid
+        silent misconfiguration.
+        """
+        config_path = _resolve_mcp_config_path(self.MCP_SERVERS_CONFIG)
+        if config_path is None:
+            logger.warning("MCP servers config not found — no MCP tools will load")
+            return {}
+
+        raw = config_path.read_text()
+        if len(raw) > 1_048_576:
+            raise AppException(
+                "MCP config file exceeds 1 MB size limit",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, OSError) as exc:
+            raise AppException(
+                f"Failed to parse MCP config {config_path}: {exc}",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            ) from exc
+
+        all_servers = data.get("mcpServers") or {}
+        if not isinstance(all_servers, dict):
+            raise AppException(
+                f"'mcpServers' must be a JSON object, got {type(all_servers).__name__}",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+
+        if len(all_servers) > _MAX_MCP_SERVERS:
+            raise AppException(
+                f"MCP config declares {len(all_servers)} servers "
+                f"(max {_MAX_MCP_SERVERS})",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+
+        enabled: dict[str, dict[str, Any]] = {}
+        for name, cfg in all_servers.items():
+            if not _validate_mcp_entry(name, cfg):
+                continue
+            if cfg.get("enabled", False):
+                enabled[name] = cfg
+
+        logger.info(
+            f"MCP config loaded: {len(enabled)}/{len(all_servers)} servers "
+            f"enabled from {config_path}"
+        )
+        return enabled
+
     @property
     def database_uri(self) -> str:
         """Generate database URI from individual components.
@@ -177,7 +262,7 @@ def validate_config(settings: Settings) -> None:
 
     Performs comprehensive validation to ensure required settings are
     present and values are within acceptable ranges. This function
-    validates port ranges, log levels, and transport protocols.
+    validates port ranges and log levels.
 
     Args:
         settings: Settings instance to validate.
