@@ -177,11 +177,7 @@ async def get_template_agent(sso_token: str | None = None):
     if not tools and not settings.USE_INMEMORY_SAVER:
         logger.critical(
             "No MCP tools loaded and in-memory saver is disabled — "
-            "at least one MCP server must be reachable in production"
-        )
-        raise AppException(
-            "No MCP tools loaded. Check mcp_servers.json and server connectivity.",
-            AppExceptionCode.PRODUCTION_MCP_CONNECTION_ERROR,
+            "Check mcp_servers.json and server connectivity."
         )
 
     # Initialize the language model with service account credentials
