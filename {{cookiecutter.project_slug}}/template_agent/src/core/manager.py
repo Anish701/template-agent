@@ -152,20 +152,34 @@ class AgentManager:
         # Generate AI call ID
         ai_call_id = f"ai_call_{str(uuid4())}"
 
+        # A2: Generate trace_id for this agent execution
+        trace_id = str(uuid4())
+
         configurable = {
             "thread_id": thread_id,
             "session_id": effective_session_id,
             "run_id": str(run_id),
             "user_id": effective_user_id,
             "ai_call_id": ai_call_id,
+            "trace_id": trace_id,  # A2: Add trace_id to configurable
         }
 
+        # A2: Initialize LangFuse CallbackHandler (zero parameters)
         langfuse_handler = CallbackHandler()
 
+        # A2: Pass session_id and metadata via RunnableConfig
+        # Note: run_id becomes the LangFuse trace ID automatically
         config = RunnableConfig(
             configurable=configurable,
-            run_id=run_id,
+            run_id=run_id,  # This becomes the LangFuse trace ID
             callbacks=[langfuse_handler],
+            metadata={
+                "langfuse_session_id": effective_session_id,
+                "langfuse_tags": [
+                    settings.LANGFUSE_TRACING_ENVIRONMENT,
+                    f"agent:{getattr(settings, 'AGENT_NAME', 'unknown')}",
+                ],
+            },
         )
 
         # Check for interrupts that need to be resumed (preserved from original)
@@ -197,8 +211,14 @@ class AgentManager:
             "config": config,
         }
 
+        # C4: Log agent execution started with trace_id
         app_logger.info(
-            f"AgentManager configured with run_id: {run_id}, thread_id: {thread_id}, session_id: {effective_session_id}"
+            "agent_execution_started",
+            run_id=str(run_id),
+            thread_id=thread_id,
+            session_id=effective_session_id,
+            trace_id=trace_id,
+            user_id=effective_user_id,
         )
         return kwargs, str(run_id), thread_id
 
@@ -220,19 +240,32 @@ class AgentManager:
         effective_session_id = request.session_id or thread_id
         effective_user_id = request.user_id or "anonymous"
 
+        # A2: Generate trace_id for this agent execution (non-checkpointing path)
+        trace_id = str(uuid4())
+
         configurable = {
             "thread_id": thread_id,
             "session_id": effective_session_id,
             "run_id": run_id,
             "user_id": effective_user_id,
+            "trace_id": trace_id,  # A2: Add trace_id
         }
 
+        # A2: Initialize LangFuse CallbackHandler (zero parameters)
         langfuse_handler = CallbackHandler()
 
+        # A2: Pass session_id and metadata via RunnableConfig
         config = RunnableConfig(
             configurable=configurable,
-            run_id=run_id,
+            run_id=run_id,  # This becomes the LangFuse trace ID
             callbacks=[langfuse_handler],
+            metadata={
+                "langfuse_session_id": effective_session_id,
+                "langfuse_tags": [
+                    settings.LANGFUSE_TRACING_ENVIRONMENT,
+                    f"agent:{getattr(settings, 'AGENT_NAME', 'unknown')}",
+                ],
+            },
         )
 
         return {
