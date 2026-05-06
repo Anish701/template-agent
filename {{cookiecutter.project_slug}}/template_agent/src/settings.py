@@ -136,6 +136,33 @@ class Settings(BaseSettings):
         json_schema_extra={"env": "GOOGLE_APPLICATION_CREDENTIALS_CONTENT"},
     )
 
+    # LLM Configuration (injected by AgentForge deployer from registry + vault)
+    LLM_PROVIDER: str = Field(
+        default="google",
+        json_schema_extra={
+            "env": "LLM_PROVIDER",
+            "description": "LLM provider key: google, openai, anthropic, etc.",
+        },
+    )
+    LLM_MODEL_ID: str = Field(
+        default="gemini-3.1-pro-preview",
+        json_schema_extra={
+            "env": "LLM_MODEL_ID",
+            "description": "Model identifier passed to the provider SDK.",
+        },
+    )
+    LLM_API_KEY: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "LLM_API_KEY",
+            "description": (
+                "API key or service-account JSON injected by the deployer "
+                "from Vault.  For Google, this is used as a fallback when "
+                "GOOGLE_APPLICATION_CREDENTIALS_CONTENT is not set."
+            ),
+        },
+    )
+
     # MCP Server Configuration (JSON-based — define N servers in one file)
     MCP_SERVERS_CONFIG: str = Field(
         default="",
