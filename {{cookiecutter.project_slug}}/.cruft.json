@@ -1,0 +1,16 @@
+{
+  "template": "https://github.com/Anish701/template-agent.git",
+  "commit": "4487c882bf5360034da196226747ab0c2a54884c",
+  "checkout": "agent-forge-cruft-v2",
+  "context": {
+    "cookiecutter": {
+      "org": "{{ cookiecutter.org }}",
+      "agent_name": "{{ cookiecutter.agent_name }}",
+      "project_slug": "{{ cookiecutter.project_slug }}",
+      "project_description": "{{ cookiecutter.project_description }}",
+      "python_package": "{{ cookiecutter.python_package }}",
+      "_template": "https://github.com/Anish701/template-agent.git"
+    }
+  },
+  "directory": null
+}

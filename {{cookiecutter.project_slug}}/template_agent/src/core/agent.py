@@ -174,26 +174,24 @@ async def get_template_agent(sso_token: str | None = None):
     else:
         logger.warning("No MCP servers enabled — agent will run without MCP tools")
 
-    if not tools and not settings.USE_INMEMORY_SAVER:
-        logger.critical(
-            "No MCP tools loaded and in-memory saver is disabled — "
-            "Check mcp_servers.json and server connectivity."
+    if not tools:
+        logger.info(
+            "No MCP tools loaded — agent will run with LLM-only capabilities. "
+            "Add MCP servers in agent_config/mcp_servers.json if tools are needed."
         )
 
-    # Initialize the language model with service account credentials
+    # Initialize the language model — provider and model ID come from
+    # AgentForge deployer env vars (LLM_PROVIDER / LLM_MODEL_ID) with
+    # Google Vertex AI as the default.
     import google.auth
 
     credentials, project = google.auth.default(
         scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
-    # Disable HTTP keepalive to prevent stale TLS connections after tool-call
-    # pauses.  Long-lived pooled connections to Vertex/Gemini can trigger
-    # ssl.SSLError("passed invalid argument") when reused; fresh connections
-    # on every request eliminate the issue.
     _no_keepalive = httpx.Limits(max_keepalive_connections=0)
 
     model = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
+        model=settings.LLM_MODEL_ID,
         temperature=0,
         credentials=credentials,
         project=project,
@@ -222,8 +220,8 @@ async def get_template_agent(sso_token: str | None = None):
             config = _parse_agent_frontmatter(agent_file)
             name = config.get("name", agent_file.stem)
 
-            # Add model if specified
-            model_name = config.get("model")
+            # Use model from frontmatter, fall back to platform-injected default
+            model_name = config.get("model") or settings.LLM_MODEL_ID
             model = None
             if model_name:
                 logger.info(f"Subagent '{name}' using model: {model_name}")

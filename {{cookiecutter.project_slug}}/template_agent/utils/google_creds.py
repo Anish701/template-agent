@@ -15,23 +15,32 @@ logger = get_python_logger()
 
 
 def initialize_google_genai():
-    """Initialize Google Generative AI with service account credentials."""
+    """Initialize Google Generative AI with service account credentials.
+
+    Credential sources (checked in order):
+    1. ``GOOGLE_APPLICATION_CREDENTIALS_CONTENT`` (explicit)
+    2. ``LLM_API_KEY`` injected by the AgentForge deployer from Vault
+    3. Ambient ADC (``GOOGLE_APPLICATION_CREDENTIALS`` already set externally)
+    """
     credentials_file = None
 
-    if not settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT:
+    creds_content = (
+        settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT
+        or settings.LLM_API_KEY
+    )
+
+    if not creds_content:
         logger.warning("No Google service account credentials configured")
         return
 
     # Check if credentials are provided as base64-encoded environment variable
-    if settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT.startswith("ewog"):
+    if creds_content.startswith("ewog"):
         # Validate that it's valid JSON
         import json
 
         try:
             # Decode base64 credentials
-            credentials_json = base64.b64decode(
-                settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT
-            ).decode("utf-8")
+            credentials_json = base64.b64decode(creds_content).decode("utf-8")
 
             json.loads(credentials_json)  # This will raise an exception if invalid JSON
 
@@ -57,19 +66,19 @@ def initialize_google_genai():
             return
 
     # Check if credentials are provided as file path
-    elif os.path.exists(settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT):
-        credentials_file = settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT
+    elif os.path.exists(creds_content):
+        credentials_file = creds_content
         logger.info(
-            f"Initialized Google Generative AI with service account file: {settings.GOOGLE_SERVICE_ACCOUNT_FILE}"
+            f"Initialized Google Generative AI with service account file: {creds_content}"
         )
 
     # Check if credentials are provided as direct JSON content
-    elif settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT.strip().startswith("{"):
+    elif creds_content.strip().startswith("{"):
         # Validate that it's valid JSON
         import json
 
         try:
-            credentials_json = settings.GOOGLE_APPLICATION_CREDENTIALS_CONTENT.strip()
+            credentials_json = creds_content.strip()
             json.loads(credentials_json)  # This will raise an exception if invalid JSON
 
             # Create temporary file with credentials
@@ -92,7 +101,7 @@ def initialize_google_genai():
 
     else:
         logger.warning(
-            f"Google service account credentials not found or invalid format: {settings.GOOGLE_SERVICE_ACCOUNT_FILE[:50]}..."
+            f"Google service account credentials not found or invalid format: {creds_content[:50]}..."
         )
         return
 
