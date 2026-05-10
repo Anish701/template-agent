@@ -81,7 +81,7 @@ class AgentManager:
                 )
 
                 # Get session_id and user_id for trace attributes
-                effective_session_id = request.session_id or thread_id
+                effective_session_id = request.session_id
                 effective_user_id = request.user_id or "anonymous"
 
                 # Use propagate_attributes to set session_id, user_id, metadata for trace
@@ -130,7 +130,7 @@ class AgentManager:
                         self._update_tool_call_tracking(stream_mode, event)
 
                         # Convert LangGraph events to simplified format
-                        effective_session_id = request.session_id or thread_id
+                        effective_session_id = request.session_id
                         formatted_events = self._format_events(
                             stream_mode,
                             event,
@@ -177,8 +177,8 @@ class AgentManager:
             )
 
         # Configure tracing and session management (preserved from original)
-        # If session_id is not provided, use thread_id as session_id
-        effective_session_id = request.session_id or thread_id
+        # session_id is required - no fallback to thread_id (fail fast)
+        effective_session_id = request.session_id
         effective_user_id = request.user_id or "anonymous"
 
         # Register thread for user (for in-memory storage tracking)
@@ -263,7 +263,7 @@ class AgentManager:
         all_messages.append(HumanMessage(content=request.message))
 
         # Configure for streaming agent (no checkpointing)
-        effective_session_id = request.session_id or thread_id
+        effective_session_id = request.session_id
         effective_user_id = request.user_id or "anonymous"
 
         # A2: Generate trace_id for this agent execution (non-checkpointing path)
