@@ -167,14 +167,14 @@ class AgentManager:
         # A2: Initialize LangFuse CallbackHandler (zero parameters)
         langfuse_handler = CallbackHandler()
 
-        # A2: Pass session_id and metadata via RunnableConfig
-        # Note: run_id becomes the LangFuse trace ID automatically
+        # A2: Pass session_id, trace_id, and metadata via RunnableConfig
         config = RunnableConfig(
             configurable=configurable,
-            run_id=run_id,  # This becomes the LangFuse trace ID
+            run_id=run_id,
             callbacks=[langfuse_handler],
             metadata={
                 "langfuse_session_id": effective_session_id,
+                "langfuse_trace_id": str(run_id),  # Explicitly pass run_id as trace ID
                 "langfuse_tags": [
                     settings.LANGFUSE_TRACING_ENVIRONMENT,
                     f"agent:{getattr(settings, 'AGENT_NAME', 'unknown')}",
@@ -254,13 +254,14 @@ class AgentManager:
         # A2: Initialize LangFuse CallbackHandler (zero parameters)
         langfuse_handler = CallbackHandler()
 
-        # A2: Pass session_id and metadata via RunnableConfig
+        # A2: Pass session_id, trace_id, and metadata via RunnableConfig
         config = RunnableConfig(
             configurable=configurable,
-            run_id=run_id,  # This becomes the LangFuse trace ID
+            run_id=run_id,
             callbacks=[langfuse_handler],
             metadata={
                 "langfuse_session_id": effective_session_id,
+                "langfuse_trace_id": str(run_id),  # Explicitly pass run_id as trace ID
                 "langfuse_tags": [
                     settings.LANGFUSE_TRACING_ENVIRONMENT,
                     f"agent:{getattr(settings, 'AGENT_NAME', 'unknown')}",
