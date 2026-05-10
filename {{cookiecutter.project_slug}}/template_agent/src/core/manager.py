@@ -73,13 +73,16 @@ class AgentManager:
 
                 # Prepare input for the persistent agent
                 # (also pre-populates _seen_message_ids from existing checkpoint)
-                kwargs, run_id, thread_id = await self._handle_input(
+                kwargs, run_id, thread_id, langfuse_handler = await self._handle_input(
                     request, persistent_agent
                 )
 
                 app_logger.info(
                     f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
                 )
+
+                # Track if we've logged the LangFuse trace_id
+                langfuse_trace_logged = False
 
                 # Use persistent agent for streaming - LangGraph will handle state automatically
                 async for stream_event in persistent_agent.astream(
@@ -89,6 +92,17 @@ class AgentManager:
                         continue
 
                     stream_mode, event = stream_event
+
+                    # After first chunk, capture LangFuse-generated trace_id and log it
+                    if not langfuse_trace_logged and langfuse_handler.last_trace_id:
+                        effective_session_id = request.session_id or thread_id
+                        app_logger.info(
+                            "langfuse_trace_created",
+                            run_id=run_id,
+                            session_id=effective_session_id,
+                            langfuse_trace_id=langfuse_handler.last_trace_id,
+                        )
+                        langfuse_trace_logged = True
 
                     # Update tool call tracking based on stream events
                     self._update_tool_call_tracking(stream_mode, event)
@@ -220,7 +234,7 @@ class AgentManager:
             trace_id=trace_id,
             user_id=effective_user_id,
         )
-        return kwargs, str(run_id), thread_id
+        return kwargs, str(run_id), thread_id, langfuse_handler
 
     async def _prepare_streaming_input_with_history(
         self, request: StreamRequest, existing_state, run_id: str, thread_id: str
