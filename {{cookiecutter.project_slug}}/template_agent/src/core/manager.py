@@ -126,23 +126,23 @@ class AgentManager:
 
                         stream_mode, event = stream_event
 
-                    # Update tool call tracking based on stream events
-                    self._update_tool_call_tracking(stream_mode, event)
+                        # Update tool call tracking based on stream events
+                        self._update_tool_call_tracking(stream_mode, event)
 
-                    # Convert LangGraph events to simplified format
-                    effective_session_id = request.session_id or thread_id
-                    formatted_events = self._format_events(
-                        stream_mode,
-                        event,
-                        request.stream_tokens,
-                        run_id,
-                        thread_id,
-                        effective_session_id,
-                    )
+                        # Convert LangGraph events to simplified format
+                        effective_session_id = request.session_id or thread_id
+                        formatted_events = self._format_events(
+                            stream_mode,
+                            event,
+                            request.stream_tokens,
+                            run_id,
+                            thread_id,
+                            effective_session_id,
+                        )
 
-                    for formatted_event in formatted_events:
-                        if formatted_event:
-                            yield formatted_event
+                        for formatted_event in formatted_events:
+                            if formatted_event:
+                                yield formatted_event
 
                 # No manual state saving needed - LangGraph handles this automatically
                 app_logger.info(
