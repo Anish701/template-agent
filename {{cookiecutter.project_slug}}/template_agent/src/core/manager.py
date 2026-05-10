@@ -99,8 +99,13 @@ class AgentManager:
                     # Create CallbackHandler - automatically inherits trace context
                     langfuse_handler = CallbackHandler()
 
-                    # Update kwargs with the handler
-                    kwargs['config'].callbacks = [langfuse_handler]
+                    # Update config with the handler (RunnableConfig is immutable, create new one)
+                    old_config = kwargs['config']
+                    kwargs['config'] = RunnableConfig(
+                        configurable=old_config.configurable,
+                        run_id=old_config.run_id,
+                        callbacks=[langfuse_handler]
+                    )
 
                     # Log trace_id immediately (no need to wait for first chunk)
                     app_logger.info(
