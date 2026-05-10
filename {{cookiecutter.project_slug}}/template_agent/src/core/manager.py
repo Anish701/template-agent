@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langfuse import get_client, observe, propagate_attributes
 from langfuse.langchain import CallbackHandler
 from langgraph.pregel import Pregel
 from langgraph.types import Command, Interrupt, Overwrite
@@ -28,6 +29,7 @@ from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
 app_logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
+langfuse = get_client()
 
 
 class AgentManager:
@@ -49,6 +51,7 @@ class AgentManager:
         self._current_tool_call_id: str | None = None
         self._seen_message_ids: set = set()
 
+    @observe(name="agent_execution")
     async def stream_response(
         self, request: StreamRequest
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -73,36 +76,52 @@ class AgentManager:
 
                 # Prepare input for the persistent agent
                 # (also pre-populates _seen_message_ids from existing checkpoint)
-                kwargs, run_id, thread_id, langfuse_handler = await self._handle_input(
+                kwargs, run_id, thread_id = await self._handle_input(
                     request, persistent_agent
                 )
 
-                app_logger.info(
-                    f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
-                )
+                # Get session_id and user_id for trace attributes
+                effective_session_id = request.session_id or thread_id
+                effective_user_id = request.user_id or "anonymous"
 
-                # Track if we've logged the LangFuse trace_id
-                langfuse_trace_logged = False
-
-                # Use persistent agent for streaming - LangGraph will handle state automatically
-                async for stream_event in persistent_agent.astream(
-                    **kwargs, stream_mode=["updates", "messages", "custom"]
+                # Use propagate_attributes to set session_id, user_id, metadata for trace
+                with propagate_attributes(
+                    session_id=effective_session_id,
+                    user_id=effective_user_id,
+                    metadata={
+                        "agent_name": getattr(settings, 'AGENT_NAME', 'unknown'),
+                        "environment": settings.LANGFUSE_TRACING_ENVIRONMENT,
+                    }
                 ):
-                    if not isinstance(stream_event, tuple):
-                        continue
+                    # Get trace_id from @observe decorator context
+                    langfuse_trace_id = langfuse.get_current_trace_id()
 
-                    stream_mode, event = stream_event
+                    # Create CallbackHandler - automatically inherits trace context
+                    langfuse_handler = CallbackHandler()
 
-                    # After first chunk, capture LangFuse-generated trace_id and log it
-                    if not langfuse_trace_logged and langfuse_handler.last_trace_id:
-                        effective_session_id = request.session_id or thread_id
-                        app_logger.info(
-                            "langfuse_trace_created",
-                            run_id=run_id,
-                            session_id=effective_session_id,
-                            langfuse_trace_id=langfuse_handler.last_trace_id,
-                        )
-                        langfuse_trace_logged = True
+                    # Update kwargs with the handler
+                    kwargs['config'].callbacks = [langfuse_handler]
+
+                    # Log trace_id immediately (no need to wait for first chunk)
+                    app_logger.info(
+                        "langfuse_trace_created",
+                        run_id=run_id,
+                        session_id=effective_session_id,
+                        langfuse_trace_id=langfuse_trace_id,
+                    )
+
+                    app_logger.info(
+                        f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
+                    )
+
+                    # Use persistent agent for streaming - LangGraph will handle state automatically
+                    async for stream_event in persistent_agent.astream(
+                        **kwargs, stream_mode=["updates", "messages", "custom"]
+                    ):
+                        if not isinstance(stream_event, tuple):
+                            continue
+
+                        stream_mode, event = stream_event
 
                     # Update tool call tracking based on stream events
                     self._update_tool_call_tracking(stream_mode, event)
@@ -178,22 +197,12 @@ class AgentManager:
             "trace_id": trace_id,  # A2: Add trace_id to configurable
         }
 
-        # A2: Initialize LangFuse CallbackHandler (zero parameters)
-        langfuse_handler = CallbackHandler()
-
-        # A2: Pass session_id and metadata via RunnableConfig
-        # Note: run_id in RunnableConfig automatically becomes the LangFuse trace ID
+        # Create RunnableConfig
+        # Note: CallbackHandler will be created and added in stream_response()
+        # within the propagate_attributes context to inherit trace context
         config = RunnableConfig(
             configurable=configurable,
-            run_id=run_id,  # This becomes the trace_id in LangFuse automatically
-            callbacks=[langfuse_handler],
-            metadata={
-                "langfuse_session_id": effective_session_id,
-                "langfuse_tags": [
-                    settings.LANGFUSE_TRACING_ENVIRONMENT,
-                    f"agent:{getattr(settings, 'AGENT_NAME', 'unknown')}",
-                ],
-            },
+            run_id=run_id,
         )
 
         # Check for interrupts that need to be resumed (preserved from original)
@@ -234,7 +243,7 @@ class AgentManager:
             trace_id=trace_id,
             user_id=effective_user_id,
         )
-        return kwargs, str(run_id), thread_id, langfuse_handler
+        return kwargs, str(run_id), thread_id
 
     async def _prepare_streaming_input_with_history(
         self, request: StreamRequest, existing_state, run_id: str, thread_id: str
