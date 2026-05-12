@@ -144,10 +144,10 @@ async def stream(user_input: StreamRequest, request: Request) -> StreamingRespon
     access_token = request.headers.get("X-Token")
     app_logger.info(f"Received token: {'Yes' if access_token else 'No'}")
 
-    # A3: Extract X-Session-Id header from gateway
+    # A3: Extract X-Session-Id header from gateway (permanent session_id)
+    # Always prefer header value over request body (header = permanent, body = thread_id)
     session_id_header = request.headers.get("X-Session-Id")
-    if session_id_header and not user_input.session_id:
-        # If session_id not in request body, use header value from gateway
+    if session_id_header:
         user_input.session_id = session_id_header
         app_logger.info(f"session_id_from_header: {session_id_header}")
 
