@@ -21,6 +21,7 @@ from template_agent.src.core.backend import get_backend
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
 from template_agent.src.core.prompt import get_system_prompt
 from template_agent.src.core.storage import get_global_checkpoint, get_global_store
+from template_agent.src.core.token_auth import SSOTokenAuth
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
@@ -97,18 +98,21 @@ async def get_template_agent(sso_token: str | None = None):
         wants_auth = defn.get("auth", True)
         token = default_token if wants_auth else None
 
+        auth = (
+            SSOTokenAuth(token, gateway_url=settings.GATEWAY_INTERNAL_URL)
+            if token
+            else None
+        )
+
         config: dict = {
             "url": url,
             "transport": transport,
-            "headers": {"Authorization": f"Bearer {token}"} if token else {},
         }
-        if not ssl_verify:
-            _verify = False  # noqa: F841 — captured below
-            config["httpx_client_factory"] = (
-                lambda _v=False, **kwargs: httpx.AsyncClient(  # nosec B501
-                    verify=_v, **kwargs
-                )
+        config["httpx_client_factory"] = (
+            lambda _auth=auth, _verify=ssl_verify, **kwargs: httpx.AsyncClient(
+                auth=_auth, verify=_verify, **kwargs  # nosec B501
             )
+        )
         logger.info(
             f"MCP server '{name}' configured: {url} "
             f"(transport={transport}, ssl_verify={ssl_verify}, "
