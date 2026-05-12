@@ -108,11 +108,12 @@ async def get_template_agent(sso_token: str | None = None):
             "url": url,
             "transport": transport,
         }
-        config["httpx_client_factory"] = (
-            lambda _auth=auth, _verify=ssl_verify, **kwargs: httpx.AsyncClient(
-                auth=_auth, verify=_verify, **kwargs  # nosec B501
-            )
-        )
+        def _make_client(_auth=auth, _verify=ssl_verify, **kwargs):
+            kwargs.pop("auth", None)
+            kwargs.pop("verify", None)
+            return httpx.AsyncClient(auth=_auth, verify=_verify, **kwargs)  # nosec B501
+
+        config["httpx_client_factory"] = _make_client
         logger.info(
             f"MCP server '{name}' configured: {url} "
             f"(transport={transport}, ssl_verify={ssl_verify}, "
