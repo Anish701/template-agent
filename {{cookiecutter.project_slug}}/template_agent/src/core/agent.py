@@ -92,8 +92,10 @@ async def get_template_agent(sso_token: str | None = None):
         default_token: str | None,
     ) -> dict:
         url = defn["url"]
+        if isinstance(url, str) and url and not url.endswith("/"):
+            url = f"{url}/"
         transport = defn.get("transport", "streamable_http")
-        ssl_verify = defn.get("ssl_verify", True)
+        ssl_verify = defn.get("ssl_verify", False)
 
         wants_auth = defn.get("auth", True)
         token = default_token if wants_auth else None
@@ -111,7 +113,8 @@ async def get_template_agent(sso_token: str | None = None):
         def _make_client(_auth=auth, _verify=ssl_verify, **kwargs):
             kwargs.pop("auth", None)
             kwargs.pop("verify", None)
-            return httpx.AsyncClient(auth=_auth, verify=_verify, **kwargs)  # nosec B501
+            kwargs.pop("follow_redirects", None)
+            return httpx.AsyncClient(auth=_auth, verify=_verify, follow_redirects=True, **kwargs)  # nosec B501
 
         config["httpx_client_factory"] = _make_client
         logger.info(
