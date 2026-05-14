@@ -21,6 +21,7 @@ from template_agent.src.core.backend import get_backend
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
 from template_agent.src.core.prompt import get_system_prompt
 from template_agent.src.core.storage import get_global_checkpoint, get_global_store
+from template_agent.src.core.token_auth import SSOTokenAuth
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
@@ -91,24 +92,31 @@ async def get_template_agent(sso_token: str | None = None):
         default_token: str | None,
     ) -> dict:
         url = defn["url"]
+        if isinstance(url, str) and url and not url.endswith("/"):
+            url = f"{url}/"
         transport = defn.get("transport", "streamable_http")
-        ssl_verify = defn.get("ssl_verify", True)
+        ssl_verify = defn.get("ssl_verify", False)
 
         wants_auth = defn.get("auth", True)
         token = default_token if wants_auth else None
 
+        auth = (
+            SSOTokenAuth(token, gateway_url=settings.GATEWAY_INTERNAL_URL)
+            if token
+            else None
+        )
+
         config: dict = {
             "url": url,
             "transport": transport,
-            "headers": {"Authorization": f"Bearer {token}"} if token else {},
         }
-        if not ssl_verify:
-            _verify = False  # noqa: F841 — captured below
-            config["httpx_client_factory"] = (
-                lambda _v=False, **kwargs: httpx.AsyncClient(  # nosec B501
-                    verify=_v, **kwargs
-                )
-            )
+        def _make_client(_auth=auth, _verify=ssl_verify, **kwargs):
+            kwargs.pop("auth", None)
+            kwargs.pop("verify", None)
+            kwargs.pop("follow_redirects", None)
+            return httpx.AsyncClient(auth=_auth, verify=_verify, follow_redirects=True, **kwargs)  # nosec B501
+
+        config["httpx_client_factory"] = _make_client
         logger.info(
             f"MCP server '{name}' configured: {url} "
             f"(transport={transport}, ssl_verify={ssl_verify}, "

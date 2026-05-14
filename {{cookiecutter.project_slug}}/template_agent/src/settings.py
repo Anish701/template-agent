@@ -180,6 +180,11 @@ class Settings(BaseSettings):
         json_schema_extra={"env": "MCP_CONNECTION_TIMEOUT"},
     )
 
+    GATEWAY_INTERNAL_URL: str = Field(
+        default="",
+        json_schema_extra={"env": "GATEWAY_INTERNAL_URL"},
+    )
+
     # Request Logging Configuration
     REQUEST_LOGGING_ENABLED: bool = Field(
         default=True,
