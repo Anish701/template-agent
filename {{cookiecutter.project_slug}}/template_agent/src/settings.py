@@ -181,8 +181,12 @@ class Settings(BaseSettings):
     )
 
     GATEWAY_INTERNAL_URL: str = Field(
-        default="",
+        default="http://ai-gateway.ai-gateway.svc.cluster.local:8000",
         json_schema_extra={"env": "GATEWAY_INTERNAL_URL"},
+    )
+    TOKEN_REFRESH_BUFFER_SECONDS: int = Field(
+        default=120,
+        json_schema_extra={"env": "TOKEN_REFRESH_BUFFER_SECONDS"},
     )
 
     # Request Logging Configuration
