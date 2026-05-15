@@ -107,7 +107,7 @@ def _wrap_mcp_tool_for_sso_retry(
             )
             return await wrapped.ainvoke(input, config=config, **kwargs)
 
-    tool.ainvoke = ainvoke_with_retry  # type: ignore[method-assign]
+    object.__setattr__(tool, "ainvoke", ainvoke_with_retry)
     return tool
 
 CONFIG_DIR = Path(__file__).parent.parent.parent / "agent_config"
