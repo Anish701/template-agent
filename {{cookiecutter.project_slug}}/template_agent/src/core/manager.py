@@ -23,6 +23,7 @@ from template_agent.src.core.agent_utils import (
     remove_tool_calls,
 )
 from template_agent.src.core.storage import register_thread
+from template_agent.src.core.token_manager import TokenManager
 from template_agent.src.schema import StreamRequest
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
@@ -65,7 +66,8 @@ class AgentManager:
         """
         # Use persistent agent for both streaming and state persistence
         # This ensures LangGraph handles state management automatically
-        async with get_template_agent(self.redhat_sso_token) as persistent_agent:
+        token_manager = TokenManager(self.redhat_sso_token)
+        async with get_template_agent(token_manager) as persistent_agent:
             try:
                 # Reset tracking for this stream
                 self._current_tool_call_id = None
