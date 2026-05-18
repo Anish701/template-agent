@@ -182,8 +182,6 @@ async def get_template_agent(
         default_token: str | None,
     ) -> dict:
         url = defn["url"]
-        if isinstance(url, str) and url and not url.endswith("/"):
-            url = f"{url}/"
         transport = defn.get("transport", "streamable_http")
         ssl_verify = defn.get("ssl_verify", False)
 
