@@ -69,6 +69,10 @@ def _patch_aegra_persistence_if_inmemory() -> None:
 
 _patch_aegra_persistence_if_inmemory()
 
+from deep_agent.aegra.shutdown import register_atexit
+
+register_atexit()
+
 app = FastAPI(title="template-agent-custom")
 
 
@@ -80,7 +84,6 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
-        """Extract X-Trace-ID from request, bind to context, forward to response."""
         trace_id = request.headers.get("x-trace-id") or uuid4().hex
         bind_request_context(trace_id=trace_id)
         response = await call_next(request)
