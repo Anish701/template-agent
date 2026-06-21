@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # ── CLI ───────────────────────────────────────────────────────────
     ENABLE_CLI: bool = Field(default=True)
 
+    # ── FLAG TO SWITCH TO RELOAD FROM DISK ────────────────────────────
+    CONFIG_AUTO_RELOAD: bool = Field(default=False)
+
     # ── Derived ───────────────────────────────────────────────────────
 
     @property

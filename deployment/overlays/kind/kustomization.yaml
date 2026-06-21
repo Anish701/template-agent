@@ -10,6 +10,11 @@ resources:
   - ui.yaml
   - ingress.yaml
 
+# Include postgres and redis for local development
+components:
+  - ../../components/postgres
+  - ../../components/redis
+
 labels:
   - pairs:
       app: template-agent
