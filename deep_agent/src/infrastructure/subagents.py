@@ -25,7 +25,8 @@ except ImportError:
     AsyncSubAgent = None
 
 from deep_agent.src.agent.config import agent_config
-from deep_agent.src.cache.model_cache import get_or_create_model
+from deep_agent.src.agent.config.model import ModelSpec, infer_provider, parse_model_config
+from deep_agent.src.cache.model_cache import get_or_create_model_from_spec
 from deep_agent.src.exceptions import LLMError, SubAgentError
 from deep_agent.src.settings import settings
 from deep_agent.utils.pylogger import get_python_logger
@@ -99,12 +100,19 @@ def _inherit_from_orchestrator(
 ) -> None:
     """Fill in missing model/mcps from the parent orchestrator config.
 
-    Mutates *agent_cfg* in place. Only inherits fields the subagent did not
-    explicitly set. Falls back to _DEFAULT_FALLBACK_MODEL when neither the
-    subagent nor the orchestrator specifies a model.
+    Mutates *agent_cfg* in place. Model inheritance follows these rules:
+    1. If subagent has no model → use orchestrator model (no fallback)
+    2. If subagent has model but no fallback → use orchestrator model as fallback
+    3. If subagent has model with fallback → keep as-is
+
+    Falls back to _DEFAULT_FALLBACK_MODEL when neither the subagent nor the
+    orchestrator specifies a model.
     """
-    if not agent_cfg.get("model"):
-        parent_model = orchestrator_cfg.get("model", "")
+    parent_model = orchestrator_cfg.get("model")
+    subagent_model = agent_cfg.get("model")
+
+    if not subagent_model:
+        # Case 1: No subagent model → inherit orchestrator model (no fallback)
         if parent_model:
             logger.info(
                 "Subagent '%s' inheriting model from orchestrator: %s",
@@ -120,6 +128,11 @@ def _inherit_from_orchestrator(
                 _DEFAULT_FALLBACK_MODEL,
             )
             agent_cfg["model"] = _DEFAULT_FALLBACK_MODEL
+    elif parent_model:
+        # Case 2 & 3: Subagent has model → inject orchestrator as fallback if missing
+        agent_cfg["model"] = _inject_fallback_if_missing(
+            subagent_model, parent_model, name
+        )
 
     if not agent_cfg.get("mcps"):
         parent_mcps = orchestrator_cfg.get("mcps", [])
@@ -130,6 +143,155 @@ def _inherit_from_orchestrator(
                 len(parent_mcps),
             )
             agent_cfg["mcps"] = list(parent_mcps)
+
+
+def _normalize_model_to_dict(
+    raw_model: str | dict[str, Any],
+    strip_fallback: bool = False,
+) -> dict[str, Any] | Any:
+    """Normalize model config (string or dict) to dict format.
+
+    Args:
+        raw_model: Model config in string or dict format.
+        strip_fallback: If True, remove fallback key from dict configs.
+
+    Returns:
+        Normalized dict with provider and name keys, or original value if invalid type.
+    """
+    if isinstance(raw_model, str):
+        return {
+            "provider": infer_provider(raw_model).value,
+            "name": raw_model,
+        }
+    elif isinstance(raw_model, dict):
+        result = dict(raw_model)  # Copy to avoid mutation
+        if strip_fallback and "fallback" in result:
+            del result["fallback"]
+        return result
+    else:
+        # Invalid type - return as-is and let parse_model_config fail later
+        logger.warning(
+            "Invalid model config type: %s, letting parse_model_config handle error",
+            type(raw_model).__name__,
+        )
+        return raw_model
+
+
+def _inject_fallback_if_missing(
+    subagent_model: str | dict[str, Any],
+    parent_model: str | dict[str, Any],
+    name: str,
+) -> str | dict[str, Any]:
+    """Inject orchestrator model as fallback if subagent model has no fallback.
+
+    Args:
+        subagent_model: Subagent's model config (string or dict).
+        parent_model: Orchestrator's model config.
+        name: Subagent name (for logging).
+
+    Returns:
+        Normalized model config dict with fallback injected if needed,
+        or original value if invalid type (will fail in parse_model_config).
+    """
+    # Normalize subagent model to dict
+    model_dict = _normalize_model_to_dict(subagent_model)
+    if not isinstance(model_dict, dict):
+        return model_dict  # Invalid type, will fail later in parse_model_config
+
+    # Case 3: Subagent already has fallback → keep as-is
+    if "fallback" in model_dict:
+        return model_dict
+
+    # Case 2: Subagent has no fallback → inject orchestrator as fallback
+    logger.debug(
+        "Subagent '%s' inheriting orchestrator model as fallback: %s",
+        name,
+        parent_model,
+    )
+
+    # Normalize parent model to dict for fallback (strip nested fallback)
+    fallback_dict = _normalize_model_to_dict(parent_model, strip_fallback=True)
+    if not isinstance(fallback_dict, dict):
+        # Invalid parent, skip fallback injection
+        return model_dict
+
+    model_dict["fallback"] = fallback_dict
+    return model_dict
+
+
+def _create_primary_model(spec: ModelSpec) -> object:
+    """Create only the primary BaseChatModel from a ModelSpec, without fallback wrapper.
+
+    Uses the model cache for efficient reuse. Fallbacks should be handled via
+    LangChain's ModelFallbackMiddleware.
+
+    Args:
+        spec: Parsed model specification (fallback config ignored).
+
+    Returns:
+        A BaseChatModel instance for the primary model only.
+    """
+
+    # Create a spec without fallback for the primary model
+    primary_spec = ModelSpec(provider=spec.provider, name=spec.name, fallback=None)
+
+    # Use the cache to get or create the model
+    return get_or_create_model_from_spec(primary_spec)
+
+
+def _resolve_subagent_model(agent_cfg: dict[str, Any]) -> object:
+    """Parse frontmatter model config and return only the primary BaseChatModel.
+
+    Strips any fallback configuration since deepagents doesn't support RunnableWithFallbacks.
+    Fallback handling should be done via LangChain's ModelFallbackMiddleware instead.
+    """
+    raw_model = agent_cfg.get("model")
+    if raw_model is None:
+        raise ValueError("missing required 'model' field in frontmatter")
+
+    # Parse model spec (may include fallback config)
+    spec = parse_model_config(raw_model)
+
+    # Create only the primary model using the cache
+    return _create_primary_model(spec)
+
+
+def _format_model_log(spec: ModelSpec) -> str:
+    """Format model spec for log messages."""
+    return spec.display_name()
+
+
+def _build_fallback_middleware(spec: ModelSpec) -> list[Any]:
+    """Build ModelFallbackMiddleware with BaseChatModel if spec has fallback configured.
+
+    Creates the fallback model using get_or_create_model_from_spec to preserve custom
+    initialization logic (MAAS base URLs, Vertex credentials, etc) and enable caching.
+
+    Args:
+        spec: Parsed model specification.
+
+    Returns:
+        List containing ModelFallbackMiddleware if fallback exists, empty list otherwise.
+    """
+    if spec.fallback is None:
+        return []
+
+    try:
+        from langchain.agents.middleware import ModelFallbackMiddleware
+    except ImportError:
+        logger.warning("ModelFallbackMiddleware not available, skipping fallback configuration")
+        return []
+
+    # Create fallback model using the model cache
+    fallback_model = _create_primary_model(spec.fallback)
+
+    middleware = ModelFallbackMiddleware(fallback_model)
+    logger.info(
+        "Configured fallback middleware: %s -> %s",
+        spec.display_name(),
+        spec.fallback.display_name(),
+    )
+    return [middleware]
 
 
 def _build_single_subagent(
@@ -173,13 +335,13 @@ def _build_default_subagent(
     tools: list[Any],
 ) -> SubAgent:
     """Build a standard SubAgent (in-process delegation)."""
-    model_name: str | None = agent_cfg.get("model")
-    if not model_name:
+    if not agent_cfg.get("model"):
         raise ValueError(
             f"Subagent '{name}' is missing required 'model' field in frontmatter"
         )
 
-    logger.info(f"Subagent '{name}' [default] using model: {model_name}")
+    spec = parse_model_config(agent_cfg["model"])
+    logger.info("Subagent '%s' [default] using model: %s", name, _format_model_log(spec))
 
     tool_names: list[str] = agent_cfg.get("tools", [])
     mcp_names: list[str] = agent_cfg.get("mcps", [])
@@ -202,9 +364,12 @@ def _build_default_subagent(
 
     skill_paths: list[str] = agent_cfg.get("skill_paths", [])
 
+    # Build fallback middleware if spec has fallback configured
+    fallback_mw = _build_fallback_middleware(spec)
+
     subagent_params: dict[str, Any] = {
         "name": name,
-        "model": get_or_create_model(model_name=model_name),
+        "model": _resolve_subagent_model(agent_cfg),
         "description": agent_cfg.get("description", ""),
         "system_prompt": agent_cfg.get("body", ""),
     }
@@ -213,6 +378,8 @@ def _build_default_subagent(
         subagent_params["tools"] = resolved_tools
     if skill_paths:
         subagent_params["skills"] = skill_paths
+    if fallback_mw:
+        subagent_params["middleware"] = fallback_mw
 
     return SubAgent(**subagent_params)
 
@@ -232,13 +399,15 @@ def _build_compiled_subagent(
 
     from deep_agent.src.infrastructure.backend import get_configured_backend
 
-    model_name: str | None = agent_cfg.get("model")
-    if not model_name:
+    if not agent_cfg.get("model"):
         raise ValueError(
             f"Subagent '{name}' (compiled) is missing required 'model' field"
         )
 
-    logger.info(f"Subagent '{name}' [compiled] using model: {model_name}")
+    spec = parse_model_config(agent_cfg["model"])
+    logger.info(
+        "Subagent '%s' [compiled] using model: %s", name, _format_model_log(spec)
+    )
 
     tool_names: list[str] = agent_cfg.get("tools", [])
     mcp_names: list[str] = agent_cfg.get("mcps", [])
@@ -260,14 +429,22 @@ def _build_compiled_subagent(
         resolved_tools = []
     skill_paths: list[str] = agent_cfg.get("skill_paths", [])
 
-    compiled_graph = create_deep_agent(
-        name=name,
-        model=get_or_create_model(model_name=model_name),
-        system_prompt=agent_cfg.get("body", ""),
-        tools=resolved_tools or None,
-        skills=skill_paths or None,
-        backend=get_configured_backend(),
-    )
+    # Build fallback middleware if spec has fallback configured
+    fallback_mw = _build_fallback_middleware(spec)
+
+    create_kwargs = {
+        "name": name,
+        "model": _resolve_subagent_model(agent_cfg),
+        "system_prompt": agent_cfg.get("body", ""),
+        "tools": resolved_tools or None,
+        "skills": skill_paths or None,
+        "backend": get_configured_backend(),
+    }
+
+    if fallback_mw:
+        create_kwargs["middleware"] = fallback_mw
+
+    compiled_graph = create_deep_agent(**create_kwargs)
 
     return CompiledSubAgent(
         name=name,
