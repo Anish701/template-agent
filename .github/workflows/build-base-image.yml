@@ -6,7 +6,7 @@ on:
       - 'v*.*.*'
     branches:
       - main
-      - deep-agent-conf-ext
+      - deep-agent
   workflow_dispatch:  # Allow manual trigger for testing
 
 permissions:
@@ -64,7 +64,7 @@ jobs:
             VERSION="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::7}"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "package_name=template-agent-deployment-${VERSION}.zip" >> $GITHUB_OUTPUT
+          echo "package_name=agent-deployment.zip" >> $GITHUB_OUTPUT
 
       - name: Create deployment package metadata
         run: |
