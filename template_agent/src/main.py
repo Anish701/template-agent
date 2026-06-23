@@ -36,7 +36,12 @@ def validate_and_initialize_config() -> None:
     try:
         # Use the validate_config function from settings.py
         validate_config_func(settings)
-        initialize_google_genai()
+        if settings.use_openai_compatible_llm:
+            logger.info(
+                "Skipping Google GenAI credential init (OPENAI_COMPAT_BASE_URL is set)"
+            )
+        else:
+            initialize_google_genai()
 
         logger.info("Configuration validation and initialization passed")
 
