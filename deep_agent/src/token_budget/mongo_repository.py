@@ -11,8 +11,21 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
+)
+from pymongo import ReturnDocument
+
+from deep_agent.src.error_handling import mongo_retry
+from deep_agent.utils.pylogger import get_python_logger
+
+logger = get_python_logger()
+
+_INDEXES_ENSURED = False
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -27,26 +40,18 @@ def _validated_date(date: str | None) -> str:
         raise ValueError(f"Invalid date format {date!r}, expected YYYY-MM-DD")
     return date
 
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ReturnDocument
-
-from deep_agent.src.error_handling import mongo_retry
-from deep_agent.utils.pylogger import get_python_logger
-
-logger = get_python_logger()
-
-_INDEXES_ENSURED = False
-
 
 class TokenUsageMongoRepository:
     """MongoDB token usage: per-thread counts and per-user daily rollup."""
 
     def __init__(self, mongodb_uri: str, db_name: str) -> None:
+        """Initialize the repository with a MongoDB URI and database name."""
         self._uri = mongodb_uri
         self._db_name = db_name
         self._client: AsyncIOMotorClient | None = None
 
     def __repr__(self) -> str:
+        """Return a debug representation without exposing credentials."""
         return f"TokenUsageMongoRepository(db={self._db_name!r})"
 
     def _get_client(self) -> AsyncIOMotorClient:
@@ -55,15 +60,15 @@ class TokenUsageMongoRepository:
         return self._client
 
     @property
-    def _db(self):
+    def _db(self) -> AsyncIOMotorDatabase:
         return self._get_client()[self._db_name]
 
     @property
-    def _thread_collection(self):
+    def _thread_collection(self) -> AsyncIOMotorCollection:
         return self._db["thread_token_usage"]
 
     @property
-    def _daily_collection(self):
+    def _daily_collection(self) -> AsyncIOMotorCollection:
         return self._db["user_daily_token_usage"]
 
     @mongo_retry
@@ -127,7 +132,7 @@ class TokenUsageMongoRepository:
         )
         if result is None:
             raise RuntimeError("Failed to increment Mongo token usage")
-        return result
+        return cast(dict[str, Any], result)
 
     @mongo_retry
     async def increment_daily_usage(
@@ -154,11 +159,13 @@ class TokenUsageMongoRepository:
         )
         if result is None:
             raise RuntimeError("Failed to increment daily token usage")
-        return result
+        return cast(dict[str, Any], result)
 
     @mongo_retry
     async def get_thread_usage(self, thread_id: str) -> dict[str, Any] | None:
-        return await self._thread_collection.find_one({"thread_id": thread_id})
+        """Return the token usage document for *thread_id*, if present."""
+        doc = await self._thread_collection.find_one({"thread_id": thread_id})
+        return cast(dict[str, Any] | None, doc)
 
     @mongo_retry
     async def get_daily_usage(
@@ -167,10 +174,13 @@ class TokenUsageMongoRepository:
         *,
         date: str | None = None,
     ) -> dict[str, Any] | None:
+        """Return a user's daily token rollup for the given UTC date."""
         day = _validated_date(date)
-        return await self._daily_collection.find_one({"user_id": user_id, "date": day})
+        doc = await self._daily_collection.find_one({"user_id": user_id, "date": day})
+        return cast(dict[str, Any] | None, doc)
 
     async def close(self) -> None:
+        """Close the underlying Motor client and release connections."""
         if self._client is not None:
             self._client.close()
             self._client = None

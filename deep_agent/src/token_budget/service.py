@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from deep_agent.src.agent.config import agent_config
 from deep_agent.src.settings import settings
 from deep_agent.utils.pylogger import get_python_logger
+
+if TYPE_CHECKING:
+    from deep_agent.src.token_budget.mongo_repository import TokenUsageMongoRepository
 
 logger = get_python_logger()
 
@@ -31,8 +34,10 @@ class TokenUsageNotFoundError(Exception):
     """No token usage record exists for the requested thread."""
 
     def __init__(self, thread_id: str) -> None:
+        """Store the thread ID that had no usage record."""
         self.thread_id = thread_id
         super().__init__(thread_id)
+
 
 def _reasoning_tokens(usage: dict[str, Any]) -> int:
     """Return reasoning tokens from provider output_token_details (Gemini)."""
@@ -148,11 +153,11 @@ def extract_tokens_from_message(message: Any) -> tuple[int, int]:
     return 0, 0
 
 
-_mongo_repo_instance = None
+_mongo_repo_instance: TokenUsageMongoRepository | None = None
 _mongo_repo_lock = threading.Lock()
 
 
-def _mongo_repo():
+def _mongo_repo() -> TokenUsageMongoRepository:
     """Return a process-wide Mongo repository (reuses the Motor client pool)."""
     global _mongo_repo_instance  # noqa: PLW0603
 
@@ -163,8 +168,13 @@ def _mongo_repo():
                     TokenUsageMongoRepository,
                 )
 
+                uri = settings.MONGODB_URI
+                if not uri:
+                    raise TokenUsageUnavailableError(
+                        "token budget tracking is not configured"
+                    )
                 _mongo_repo_instance = TokenUsageMongoRepository(
-                    settings.MONGODB_URI,
+                    uri,
                     db_name=settings.MONGODB_DB,
                 )
     return _mongo_repo_instance
@@ -219,7 +229,10 @@ async def check_and_record(
         )
         return
 
-    from deep_agent.src.token_budget.otel_emit import emit_daily_token_usage, emit_token_usage
+    from deep_agent.src.token_budget.otel_emit import (
+        emit_daily_token_usage,
+        emit_token_usage,
+    )
 
     emit_token_usage(
         thread_id=thread_id,

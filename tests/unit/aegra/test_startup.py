@@ -74,6 +74,7 @@ class TestEnsureDatabase:
         mock_settings.MONGODB_URI = ""
         mock_personalization = AsyncMock()
         mock_feedback = AsyncMock()
+        mock_mcp_store = AsyncMock()
         with (
             patch("deep_agent.src.settings.settings", mock_settings),
             patch(
@@ -84,11 +85,16 @@ class TestEnsureDatabase:
                 "deep_agent.src.feedback.repository.FeedbackRepository",
                 return_value=mock_feedback,
             ),
+            patch(
+                "deep_agent.aegra.mcp_token_store.McpTokenStore",
+                return_value=mock_mcp_store,
+            ),
         ):
             result = await startup._ensure_database()
         assert result == "ok"
         mock_personalization.ensure_tables.assert_awaited_once()
         mock_feedback.ensure_table.assert_awaited_once()
+        mock_mcp_store.ensure_tables.assert_awaited_once()
 
     async def test_mongo_indexes_when_configured(self):
         import sys
