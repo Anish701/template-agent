@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import json
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -73,7 +75,19 @@ from deep_agent.aegra.shutdown import register_atexit
 
 register_atexit()
 
-app = FastAPI(title="template-agent-custom")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    from deep_agent.aegra.startup import run_startup
+    from deep_agent.src.observability.otel_setup import setup_otel_metrics, setup_otel_traces
+
+    await run_startup()
+    setup_otel_metrics(settings, logger)
+    setup_otel_traces(_app, settings, logger)
+    yield
+
+
+app = FastAPI(title="template-agent-custom", lifespan=_lifespan)
 
 
 class TraceIDMiddleware(BaseHTTPMiddleware):
@@ -276,16 +290,55 @@ async def feedback_handler(request: Request) -> JSONResponse:
     )
 
 
+def _validate_thread_id(thread_id: str) -> str:
+    """Validate that thread_id is a well-formed UUID."""
+    try:
+        return str(UUID(thread_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid thread_id format (expected UUID)"
+        ) from None
+
+
 @app.get("/feedback/{thread_id}")
 async def get_thread_feedback(
     thread_id: str, user_id: str = "anonymous"
 ) -> dict[str, Any]:
     """Return all feedback for a thread."""
+    thread_id = _validate_thread_id(thread_id)
     if not settings.database_uri:
         return {"feedback": []}
     repo = FeedbackRepository(settings.database_uri)
     items = await repo.list_feedback(thread_id, user_id)
     return {"feedback": items}
+
+
+@app.get("/threads/{thread_id}/token-usage")
+async def get_thread_token_usage_endpoint(thread_id: str) -> dict[str, Any]:
+    """Return cumulative token usage for a thread."""
+    thread_id = _validate_thread_id(thread_id)
+    from dataclasses import asdict
+
+    from deep_agent.src.token_budget.service import (
+        TokenUsageNotFoundError,
+        TokenUsageUnavailableError,
+        get_thread_token_usage,
+    )
+
+    try:
+        usage = await get_thread_token_usage(thread_id)
+    except TokenUsageNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No token usage for thread {thread_id}",
+        ) from None
+    except TokenUsageUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="Token usage storage unavailable",
+        ) from None
+
+    return asdict(usage)
 
 
 @app.get("/info")
