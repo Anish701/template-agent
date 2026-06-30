@@ -105,6 +105,10 @@ harness_profiles:
 # Controls which deepagents middleware is active and how it behaves.
 # Resolution order: defaults → profile (matched from model: field) → per-agent overrides
 middleware:
+  human_approval:
+    enabled: true    # set to false to disable human-in-the-loop tool approval
+    mode: all        # 'all' = every tool; 'none' = disabled
+    exclude: []      # tool names to never interrupt (e.g. ls, read_file, glob, grep)
   summarization_tool:
     enabled: true
   memory:
