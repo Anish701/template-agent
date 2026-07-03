@@ -252,6 +252,16 @@ token_budget:
 # OTEL traces export to Jaeger/Tempo/Collector via OTEL_EXPORTER_OTLP_ENDPOINT.
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Platform                                                           [env-var]
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+platform:
+  audit:
+    enabled: false
+    buffer_max: 1000
+# Env: PLATFORM_AUDIT_ENABLED, PLATFORM_AUDIT_BUFFER_MAX
+# Org context: ORG
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Logging                                                            [env-var]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 logging:
