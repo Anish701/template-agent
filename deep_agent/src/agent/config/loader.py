@@ -356,9 +356,9 @@ class AgentConfig:
         auth_mode = cfg.get("auth_mode", "sso")
         cfg["auth_mode"] = auth_mode
 
-        if auth_mode not in ("sso", "oauth", "dcr"):
+        if auth_mode not in ("sso", "oauth", "dcr", "api_key"):
             logger.error(
-                "MCP server '%s': invalid auth_mode '%s' (expected sso, oauth, or dcr)",
+                "MCP server '%s': invalid auth_mode '%s' (expected sso, oauth, dcr, or api_key)",
                 name,
                 auth_mode,
             )

@@ -86,6 +86,9 @@ class _TokenInjectorInterceptor:
         user_id = _current_user_id.get()
         auth_mode = self._server_cfg.get("auth_mode", "sso")
 
+        if auth_mode == "api_key":
+            return await handler(request)
+
         try:
             if auth_mode in ("oauth", "dcr"):
                 if not user_id:
@@ -245,6 +248,13 @@ async def _resolve_connection_token(
     auth_mode = entry.get("auth_mode", "sso")
     if auth_mode == "sso":
         return sso_token
+
+    if auth_mode == "api_key":
+        env_var = entry.get("auth_env_var", "")
+        api_key = os.environ.get(env_var, "").strip().strip('"')
+        if not api_key:
+            logger.warning("MCP auth_mode=api_key but %s is not set", env_var)
+        return api_key or None
 
     if not user_id:
         return None
