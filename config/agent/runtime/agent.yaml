@@ -173,7 +173,7 @@ async_tasks:
 #   - For readOnlyRootFilesystem SCC, use state or composite with emptyDir volume.
 filesystem:
   backend:
-    type: state
+    type: composite
     local_shell:
       timeout: 120
       max_output_bytes: 100000
@@ -181,12 +181,13 @@ filesystem:
       enabled: true
       scope: user
     routes:
+      "/skills/": filesystem_readonly
       "/memories/": store
       "/reports/": store
       "/": state
   permissions:
     - operations: [read, glob, grep, ls]
-      paths: ["config/**", "docs/**", "reports/**"]
+      paths: ["config/**", "docs/**", "reports/**", "skills/**"]
       mode: allow
     - operations: [write, edit]
       paths: ["reports/**", "memories/**"]

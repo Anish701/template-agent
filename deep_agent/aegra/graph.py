@@ -294,7 +294,12 @@ async def agent(runtime: ServerRuntime) -> Any:
         mcp_tool_names=frozenset(t.name for t in mcp_tools),
     )
     memory = resolve_memory_param(resolved_mw)
-    skills_param = skill_paths if resolved_mw.skills_enabled else None
+    if skill_paths and resolved_mw.skills_enabled:
+        from deep_agent.src.agent.config.resolver import to_virtual_skill_paths
+
+        skills_param = to_virtual_skill_paths(skill_paths)
+    else:
+        skills_param = None
 
     async_mw = build_async_middleware(subagents, providers_config.async_tasks)
     if async_mw is not None:
