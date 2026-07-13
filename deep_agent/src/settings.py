@@ -156,7 +156,8 @@ class Settings(BaseSettings):
     ENABLE_CLI: bool = Field(default=True)
 
     # ── Platform ──────────────────────────────────────────────────────
-    AI_PLATFORM_AGENT_ORG: str = Field(default="")
+    DEPLOYED_AGENT_NAME: str = Field(default="")
+    DEPLOYED_AGENT_ORG: str = Field(default="")
     PLATFORM_AUDIT_ENABLED: bool = Field(default=True)
     PLATFORM_AUDIT_BUFFER_MAX: int = Field(default=1000, ge=1, le=100_000)
 
@@ -169,6 +170,20 @@ class Settings(BaseSettings):
     AGENT_PUBLIC_BASE_URL: Optional[str] = Field(default=None)
 
     # ── Derived ───────────────────────────────────────────────────────
+
+    @property
+    def agent_deployment_id(self) -> str:
+        """Unique identity for this agent deployment, used as DCR/token key.
+
+        Combines org + agent name when deployed via agent-engine.
+        Falls back to the generic config name for local dev.
+        """
+        if self.DEPLOYED_AGENT_ORG and self.DEPLOYED_AGENT_NAME:
+            return f"{self.DEPLOYED_AGENT_ORG}/{self.DEPLOYED_AGENT_NAME}"
+        if self.DEPLOYED_AGENT_NAME:
+            return self.DEPLOYED_AGENT_NAME
+        from deep_agent.src.agent.config import agent_config
+        return agent_config.get_name()
 
     @property
     def agent_public_base_url(self) -> str:
