@@ -277,11 +277,11 @@ class AgentConfig:
             }
         )
 
-        # Extract cache section
-        self._cache_config = CacheFileConfig.model_validate(raw.get("cache", {}))
-
         # Extract OPA section
         self._opa_config = OpaFileConfig.model_validate(raw.get("opa", {}))
+
+        # Extract cache section
+        self._cache_config = CacheFileConfig.model_validate(raw.get("cache", {}))
 
         # Load OTEL config from observability.yaml
         self._otel_config = self._load_otel_config()
