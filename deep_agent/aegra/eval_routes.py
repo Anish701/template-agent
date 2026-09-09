@@ -31,18 +31,39 @@ from pydantic import BaseModel
 _bearer = HTTPBearer(auto_error=False)
 
 
-def _require_bearer(
+async def _require_developer(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    """Reject requests that carry no Bearer token.
+    """Validate JWT and enforce DEVELOPER_GROUP membership for eval endpoints.
 
-    Both /v1/eval/run and /v1/eval/thread-tool-calls/{thread_id} invoke the
-    production agent or read checkpoint blobs that may contain user PII.
-    Callers (run_eval.py subprocess) always forward the session token; any
-    request without one is unauthenticated and must be rejected.
+    When ENABLE_AUTH=false, passes through without group check.
+    When DEVELOPER_GROUP is set, only its members pass. If only USER_GROUP is set,
+    eval is denied (no developer group). Both empty: unrestricted.
+    Returns the raw Bearer token string.
     """
+    import asyncio as _asyncio
+
+    import jwt
+
+    from deep_agent.aegra.auth import ENABLE_AUTH, _decode_token
+    from deep_agent.aegra.auth_helpers import check_group_access
+
     if creds is None or not creds.credentials:
         raise HTTPException(status_code=401, detail="Bearer token required")
+    if not ENABLE_AUTH:
+        return str(creds.credentials)
+    try:
+        payload = await _asyncio.to_thread(_decode_token, creds.credentials)
+    except jwt.ExpiredSignatureError:
+        logging.getLogger(__name__).warning("Token expired")
+        raise HTTPException(status_code=401, detail="Token expired") from None
+    except jwt.PyJWTError as exc:
+        logging.getLogger(__name__).warning("Invalid token: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+    from deep_agent.aegra.auth_helpers import _normalize_roles
+
+    permissions = _normalize_roles(payload)
+    check_group_access(permissions, developer_only=True)
     return str(creds.credentials)
 
 
@@ -275,6 +296,7 @@ def _extract_from_messages(messages: list[dict]) -> tuple[str, list[dict], list[
 
 
 async def _create_thread(client: httpx.AsyncClient) -> str:
+    """Create a new LangGraph thread and return its ID."""
     resp = await client.post(f"{AGENT_BASE_URL}/threads", json={})
     resp.raise_for_status()
     return resp.json()["thread_id"]  # type: ignore[no-any-return]
@@ -356,6 +378,7 @@ async def _collect_subagent_tool_calls_via_remote_graph(
         snapshot = await graph.aget_state(config, subgraphs=True)
 
         def _collect(state_snapshot: Any) -> None:
+            """Recursively collect tool calls from a state snapshot."""
             tasks = getattr(state_snapshot, "tasks", [])
             for task in tasks:
                 substate = getattr(task, "state", None)
@@ -395,8 +418,8 @@ async def _collect_subagent_tool_calls_from_postgres(
     from deep_agent.src.settings import settings
 
     def _ext_hook(code: int, data: bytes) -> Any:
-        # Return raw bytes for unknown ext types instead of raising —
-        # prevents Gemini thought-signature binary payloads from aborting parse.
+        """Return raw bytes for unknown msgpack ext types instead of raising."""
+        # Prevents Gemini thought-signature binary payloads from aborting parse.
         try:
             return msgpack.unpackb(data, raw=False, ext_hook=_ext_hook)
         except Exception:
@@ -463,7 +486,7 @@ def _detect_interrupt(run_state: dict) -> bool:
 async def get_thread_tool_calls(
     thread_id: str,
     request: Request,
-    _token: str = Depends(_require_bearer),
+    _token: str = Depends(_require_developer),
 ) -> dict[str, Any]:
     """Return all subagent tool calls for a completed thread.
 
@@ -505,7 +528,7 @@ async def _verify_thread_ownership(thread_id: str, request: Request) -> None:
 @router.post("/run", response_model=EvalRunResponse)
 async def eval_run(
     body: EvalRunRequest,
-    _token: str = Depends(_require_bearer),
+    _token: str = Depends(_require_developer),
 ) -> EvalRunResponse:
     """Run one conversation turn for eval purposes.
 
@@ -621,6 +644,7 @@ _EVALS_DDL_STATEMENTS = [
 
 
 async def _pg_conn() -> Any:
+    """Open an async PostgreSQL connection using the configured URI."""
     import psycopg
 
     from deep_agent.src.settings import settings
@@ -629,6 +653,7 @@ async def _pg_conn() -> Any:
 
 
 async def _ensure_evals_table() -> None:
+    """Create the evals table and run migrations if needed."""
     import psycopg.errors
 
     conn = await _pg_conn()
@@ -655,6 +680,7 @@ _table_ensured = False
 
 
 async def _ensure_evals_table_once() -> None:
+    """Idempotent wrapper — runs _ensure_evals_table at most once."""
     global _table_ensured
     if _table_ensured:
         return
@@ -697,6 +723,7 @@ async def _run_ddl_once(
 
 
 def _pg_row_to_dict(row: Any, cursor: Any) -> dict[str, Any]:
+    """Convert a psycopg row tuple to a dict keyed by column name."""
     return dict(zip([d.name for d in cursor.description], row))
 
 
@@ -858,6 +885,7 @@ _datasets_table_ensured = False
 
 
 async def _ensure_datasets_table_once() -> None:
+    """Idempotent wrapper — runs datasets table DDL at most once."""
     await _run_ddl_once(
         _DATASETS_DDL,
         _DATASETS_DDL_MIGRATIONS,
@@ -920,7 +948,9 @@ async def _require_eval_files() -> None:
 
 
 @eval_mgmt_router.post("/trigger", response_model=None)
-async def trigger_eval(request: Request) -> Any:
+async def trigger_eval(
+    request: Request, _token: str = Depends(_require_developer)
+) -> Any:
     """Cache-first eval trigger. Returns cached result or sets in_progress."""
     if not _EVAL_RUNNER_URL:
         raise HTTPException(
@@ -992,7 +1022,9 @@ async def trigger_eval(request: Request) -> Any:
 
 
 @eval_mgmt_router.post("/force-trigger", response_model=None)
-async def force_trigger_eval(request: Request) -> Any:
+async def force_trigger_eval(
+    request: Request, _token: str = Depends(_require_developer)
+) -> Any:
     """Force a fresh eval run, bypassing cache."""
     if not _EVAL_RUNNER_URL:
         raise HTTPException(
@@ -1027,6 +1059,7 @@ async def _queue_eval_run(
     *,
     forced: bool = False,
 ) -> dict[str, Any]:
+    """Dispatch an eval run to the eval-runner service."""
     auth_token = request.headers.get("authorization", "")
     sub = _extract_sub(request)
     _write_eval_redis(sub or "", request.headers.get("x-refresh-token", ""))
@@ -1054,7 +1087,7 @@ _EVAL_STALE_TIMEOUT_MINUTES = int(os.environ.get("EVAL_STALE_TIMEOUT_MINUTES", "
 
 
 @eval_mgmt_router.get("/status")
-async def eval_status() -> dict[str, Any]:
+async def eval_status(_token: str = Depends(_require_developer)) -> dict[str, Any]:
     """Return the latest eval record for this agent.
 
     Returns {"eval_status": "no_dataset"} immediately when no dataset is
@@ -1108,7 +1141,9 @@ async def eval_status() -> dict[str, Any]:
 
 
 @eval_mgmt_router.get("/results")
-async def eval_results(request: Request) -> dict[str, Any]:
+async def eval_results(
+    request: Request, _token: str = Depends(_require_developer)
+) -> dict[str, Any]:
     """Return a completed eval report.
 
     Optional query param ``completed_at`` fetches a specific run by its
@@ -1154,7 +1189,9 @@ async def eval_results(request: Request) -> dict[str, Any]:
 
 
 @eval_mgmt_router.get("/history")
-async def eval_history(request: Request) -> dict[str, Any]:
+async def eval_history(
+    request: Request, _token: str = Depends(_require_developer)
+) -> dict[str, Any]:
     """Return historical completed eval runs (scalars only, no results_detail)."""
     try:
         limit = min(int(request.query_params.get("limit", "20")), 100)
@@ -1205,7 +1242,9 @@ async def eval_history(request: Request) -> dict[str, Any]:
 
 
 @eval_mgmt_router.get("/trends")
-async def eval_trends(request: Request) -> dict[str, Any]:
+async def eval_trends(
+    request: Request, _token: str = Depends(_require_developer)
+) -> dict[str, Any]:
     """Return per-metric score trends across historical eval runs."""
     try:
         limit = min(int(request.query_params.get("limit", "20")), 100)
@@ -1285,6 +1324,7 @@ def _collect_agent_models() -> list[dict[str, Any]]:
     seen: set[str] = set()
 
     def _parse_model(path: Path, source: str, default: bool = False) -> None:
+        """Extract model name from a config file and append to results."""
         if not path.exists():
             return
         try:
@@ -1312,7 +1352,7 @@ def _collect_agent_models() -> list[dict[str, Any]]:
 
 
 @eval_mgmt_router.get("/models")
-async def get_eval_models() -> dict[str, Any]:
+async def get_eval_models(_token: str = Depends(_require_developer)) -> dict[str, Any]:
     """Return available LLM models for evaluation (orchestrator + subagents)."""
     return {"models": _collect_agent_models()}
 
@@ -1325,7 +1365,9 @@ class DatasetUpsertRequest(BaseModel):
 
 
 @eval_mgmt_router.post("/dataset")
-async def upsert_dataset(body: DatasetUpsertRequest) -> dict[str, Any]:
+async def upsert_dataset(
+    body: DatasetUpsertRequest, _token: str = Depends(_require_developer)
+) -> dict[str, Any]:
     """Upsert the eval dataset for this agent.
 
     Only one row is kept — DELETE + INSERT ensures the latest submission always wins.
@@ -1349,7 +1391,7 @@ async def upsert_dataset(body: DatasetUpsertRequest) -> dict[str, Any]:
 
 
 @eval_mgmt_router.get("/dataset")
-async def get_dataset() -> dict[str, Any]:
+async def get_dataset(_token: str = Depends(_require_developer)) -> dict[str, Any]:
     """Return the stored eval dataset for this agent."""
     await _ensure_datasets_table_once()
 
