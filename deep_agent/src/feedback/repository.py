@@ -52,9 +52,14 @@ class FeedbackRepository:
         global _TABLE_ENSURED  # noqa: PLW0603
         if _TABLE_ENSURED:
             return
-        async with await psycopg.AsyncConnection.connect(self._uri) as conn:
-            await conn.execute(CREATE_FEEDBACK_TABLE)
-            await conn.commit()
+        try:
+            async with await psycopg.AsyncConnection.connect(self._uri) as conn:
+                await conn.execute(CREATE_FEEDBACK_TABLE)
+                await conn.commit()
+        except psycopg.errors.DuplicateColumn:
+            logger.info(
+                "message_feedback comment column already exists (concurrent migration)"
+            )
         _TABLE_ENSURED = True
         logger.info("message_feedback table ensured")
 

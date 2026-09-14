@@ -96,7 +96,14 @@ class TestUpsertFeedback:
             )
             mock_conn.execute.assert_awaited_once()
             args = mock_conn.execute.call_args
-            assert "The answer was wrong" in args[0][1]
+            assert args[0][1] == (
+                "t1",
+                "m1",
+                "u1",
+                "down",
+                "The answer was wrong",
+                "trace-1",
+            )
 
     @pytest.mark.asyncio
     async def test_update_second_upsert(self, repo, mock_conn):
