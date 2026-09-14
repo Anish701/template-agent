@@ -96,6 +96,7 @@ class TestUpsertFeedback:
             )
             mock_conn.execute.assert_awaited_once()
             args = mock_conn.execute.call_args
+            sql = args[0][0]
             assert args[0][1] == (
                 "t1",
                 "m1",
@@ -103,6 +104,11 @@ class TestUpsertFeedback:
                 "down",
                 "The answer was wrong",
                 "trace-1",
+            )
+            comment_pos = sql.index("comment")
+            trace_id_pos = sql.index("trace_id")
+            assert comment_pos < trace_id_pos, (
+                "SQL column order: comment must precede trace_id"
             )
 
     @pytest.mark.asyncio
