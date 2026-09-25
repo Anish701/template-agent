@@ -12,20 +12,10 @@ Functions:
     parse_frontmatter: Parse markdown file with YAML frontmatter
 """
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
-
-
-def get_current_date() -> str:
-    """Get the current date in a formatted string.
-
-    Returns:
-        The current date formatted as "Month Day, Year" (e.g., "December 25, 2024").
-    """
-    return datetime.now().strftime("%B %d, %Y")
 
 
 def parse_frontmatter(path: Path) -> dict[str, Any]:
