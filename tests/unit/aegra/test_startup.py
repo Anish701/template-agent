@@ -232,6 +232,7 @@ class TestSetupMcpAppsCapability:
 
 class TestWarmupGraphImports:
     def test_ok(self):
+        """All graph dependency imports succeed and return 'ok'."""
         with (
             patch.dict("sys.modules", {"deepagents": MagicMock()}),
             patch(
@@ -270,11 +271,20 @@ class TestWarmupGraphImports:
                 "deep_agent.src.infrastructure.subagents.load_subagents",
                 create=True,
             ),
+            patch(
+                "deep_agent.src.agent.config.model.parse_model_config",
+                create=True,
+            ),
+            patch(
+                "deep_agent.src.cache.model_cache.get_or_create_model_from_spec",
+                create=True,
+            ),
         ):
             result = startup._warmup_graph_imports()
         assert result == "ok"
 
     def test_import_failure_returns_warning(self):
+        """A broken import returns a warning instead of crashing startup."""
         with patch.dict(
             "sys.modules",
             {"deepagents": None},
