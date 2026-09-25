@@ -467,6 +467,9 @@ def _warmup_graph_imports() -> str:
         from deep_agent.aegra.mcp_tool_auth import wrap_mcp_tools_for_auth  # noqa: F401
         from deep_agent.src.agent.config import agent_config  # noqa: F401
         from deep_agent.src.agent.config.model import parse_model_config  # noqa: F401
+        from deep_agent.src.agent.provider_factory import (
+            create_model_from_spec,  # noqa: F401
+        )
         from deep_agent.src.cache.model_cache import (
             get_or_create_model_from_spec,  # noqa: F401
         )

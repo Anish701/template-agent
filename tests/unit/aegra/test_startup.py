@@ -276,6 +276,10 @@ class TestWarmupGraphImports:
                 create=True,
             ),
             patch(
+                "deep_agent.src.agent.provider_factory.create_model_from_spec",
+                create=True,
+            ),
+            patch(
                 "deep_agent.src.cache.model_cache.get_or_create_model_from_spec",
                 create=True,
             ),
@@ -306,10 +310,13 @@ class TestWarmupGraphImports:
                 startup, "_warm_caches", new_callable=AsyncMock, return_value="ok"
             ),
             patch.object(startup, "_setup_telemetry", return_value="ok"),
-            patch.object(startup, "_warmup_graph_imports", return_value="ok"),
+            patch.object(
+                startup, "_warmup_graph_imports", return_value="warmup-sentinel"
+            ) as mock_warmup,
         ):
             result = await startup.run_startup()
-        assert result["graph_warmup"] == "ok"
+        assert result["graph_warmup"] == "warmup-sentinel"
+        mock_warmup.assert_called_once_with()
         startup._startup_complete = False
 
 
