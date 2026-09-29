@@ -11,9 +11,11 @@ from deep_agent.src.infrastructure.middleware import (
     _current_user_info,
     _import_middleware,
     _sanitize_identity_value,
+    build_current_datetime_middleware,
     build_excluded_middleware,
     build_middleware_list,
     build_user_identity_middleware,
+    get_current_datetime,
     resolve_memory_param,
     set_user_info,
 )
@@ -43,11 +45,12 @@ class TestBuildMiddlewareList:
         ) as mock_settings:
             mock_settings.MIDDLEWARE_ENABLED = False
             result = build_middleware_list(resolved)
-        # GeminiSafetyLogMiddleware + UserIdentityMiddleware + ImageSanitizeMiddleware always included
-        assert len(result) == 3
+        # GeminiSafetyLogMiddleware + UserIdentityMiddleware + CurrentDatetimeMiddleware + ImageSanitizeMiddleware always included
+        assert len(result) == 4
         assert type(result[0]).__name__ == "GeminiSafetyLogMiddleware"
         assert type(result[1]).__name__ == "UserIdentityMiddleware"
-        assert type(result[2]).__name__ == "ImageSanitizeMiddleware"
+        assert type(result[2]).__name__ == "CurrentDatetimeMiddleware"
+        assert type(result[3]).__name__ == "ImageSanitizeMiddleware"
 
     def test_includes_summarization_tool_when_enabled(self):
         resolved = ResolvedMiddlewareConfig(summarization_tool_enabled=True)
@@ -76,8 +79,8 @@ class TestBuildMiddlewareList:
             mock_settings.MIDDLEWARE_ENABLED = True
             result = build_middleware_list(resolved)
             build_sum.assert_not_called()
-        # Default guardrails (model/tool limits + model retry) + safety + identity + image sanitize.
-        assert len(result) == 6
+        # Default guardrails (model/tool limits + model retry) + safety + identity + datetime + image sanitize.
+        assert len(result) == 7
 
     def test_includes_extra_middleware(self):
         resolved = ResolvedMiddlewareConfig(
@@ -91,7 +94,7 @@ class TestBuildMiddlewareList:
         ) as mock_settings:
             mock_settings.MIDDLEWARE_ENABLED = True
             result = build_middleware_list(resolved)
-        assert len(result) == 7
+        assert len(result) == 8
         assert any(isinstance(m, _DummyMiddleware) for m in result)
 
 
@@ -449,6 +452,79 @@ class TestUserIdentityMiddleware:
     @pytest.mark.asyncio
     async def test_awrap_model_call_delegates(self):
         mw = build_user_identity_middleware()
+        if mw is None:
+            pytest.skip("AgentMiddleware not available")
+        handler = AsyncMock()
+        request = MagicMock()
+        await mw.awrap_model_call(request, handler)
+        handler.assert_called_once()
+
+
+class TestGetCurrentDatetime:
+    """Test get_current_datetime returns a properly formatted UTC string."""
+
+    def test_returns_string_with_utc_suffix(self):
+        result = get_current_datetime()
+        assert result.endswith(" UTC")
+
+    def test_format_matches_expected_pattern(self):
+        result = get_current_datetime()
+        # e.g. "September 25, 2026, 16:30:00 UTC"
+        import re
+
+        assert re.match(r"^[A-Z][a-z]+ \d{1,2}, \d{4}, \d{2}:\d{2}:\d{2} UTC$", result)
+
+    def test_uses_utc_not_local(self):
+        from datetime import datetime, timezone
+
+        utc_now = datetime.now(timezone.utc)
+        result = get_current_datetime()
+        # The date in the result should match UTC date
+        expected_date = utc_now.strftime("%B %d, %Y")
+        assert expected_date in result
+
+
+class TestCurrentDatetimeMiddleware:
+    """Test build_current_datetime_middleware and its injection logic."""
+
+    def test_returns_middleware_instance(self):
+        mw = build_current_datetime_middleware()
+        if mw is None:
+            pytest.skip("AgentMiddleware not available")
+        assert type(mw).__name__ == "CurrentDatetimeMiddleware"
+
+    def test_always_injects(self):
+        mw = build_current_datetime_middleware()
+        if mw is None:
+            pytest.skip("AgentMiddleware not available")
+        request = MagicMock()
+        request.system_message = MagicMock()
+        with patch(
+            "deepagents.middleware.subagents.append_to_system_message"
+        ) as mock_append:
+            appended_msg = MagicMock()
+            mock_append.return_value = appended_msg
+            result = mw._inject_current_datetime(request)
+        mock_append.assert_called_once()
+        block_arg = mock_append.call_args[0][1]
+        assert "<current-datetime>" in block_arg
+        assert "</current-datetime>" in block_arg
+        assert "UTC" in block_arg
+        request.override.assert_called_once_with(system_message=appended_msg)
+        assert result is request.override.return_value
+
+    def test_wrap_model_call_delegates(self):
+        mw = build_current_datetime_middleware()
+        if mw is None:
+            pytest.skip("AgentMiddleware not available")
+        handler = MagicMock()
+        request = MagicMock()
+        mw.wrap_model_call(request, handler)
+        handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_awrap_model_call_delegates(self):
+        mw = build_current_datetime_middleware()
         if mw is None:
             pytest.skip("AgentMiddleware not available")
         handler = AsyncMock()
