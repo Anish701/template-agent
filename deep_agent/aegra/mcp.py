@@ -821,6 +821,15 @@ async def get_mcp_tools(
         "Connecting to %d MCP server(s): %s", len(enabled), ", ".join(enabled)
     )
 
+    pre_discovery_set = (
+        await asyncio.to_thread(
+            cache_smembers,
+            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
+        )
+        if cache_key is not None
+        else None
+    )
+
     has_auth: bool = bool(sso_token or user_id)
     discovery_token = _mcp_tool_discovery.set(True)
     try:
@@ -888,10 +897,7 @@ async def get_mcp_tools(
     if cache_key is not None:
         _cached_tools[cache_key] = tools
         _cached_tools_ts[cache_key] = time.time()
-        _cached_connected_set[cache_key] = await asyncio.to_thread(
-            cache_smembers,
-            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
-        )
+        _cached_connected_set[cache_key] = pre_discovery_set or set()
     logger.info(
         "Loaded %d MCP tool(s): %s (cached for %.0fs, user=%s)",
         len(tools),
