@@ -144,6 +144,44 @@ def cache_delete(key: str) -> bool:
         return False
 
 
+def cache_sadd(key: str, value: str) -> bool:
+    """Add a value to a Redis set. Returns False on error."""
+    client = get_redis_client()
+    if client is None:
+        return False
+    try:
+        client.sadd(f"{REDIS_KEY_PREFIX}{key}", value)
+        return True
+    except Exception:
+        logger.debug("SADD failed for key '%s'", key, exc_info=True)
+        return False
+
+
+def cache_srem(key: str, value: str) -> bool:
+    """Remove a value from a Redis set. Returns False on error."""
+    client = get_redis_client()
+    if client is None:
+        return False
+    try:
+        client.srem(f"{REDIS_KEY_PREFIX}{key}", value)
+        return True
+    except Exception:
+        logger.debug("SREM failed for key '%s'", key, exc_info=True)
+        return False
+
+
+def cache_smembers(key: str) -> set[str]:
+    """Return all members of a Redis set. Returns empty set on error."""
+    client = get_redis_client()
+    if client is None:
+        return set()
+    try:
+        return client.smembers(f"{REDIS_KEY_PREFIX}{key}") or set()
+    except Exception:
+        logger.debug("SMEMBERS failed for key '%s'", key, exc_info=True)
+        return set()
+
+
 _RELEASE_LOCK_LUA = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
