@@ -782,8 +782,9 @@ async def get_mcp_tools(
     from deep_agent.aegra.redis import cache_smembers
 
     if cached and len(cached) > 0 and (time.time() - cached_ts) < _MCP_TOOL_CACHE_TTL:
-        redis_set = cache_smembers(
-            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}"
+        redis_set = await asyncio.to_thread(
+            cache_smembers,
+            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
         )
         local_set = _cached_connected_set.get(cache_key, set())
         if redis_set == local_set:
@@ -887,8 +888,9 @@ async def get_mcp_tools(
     if cache_key is not None:
         _cached_tools[cache_key] = tools
         _cached_tools_ts[cache_key] = time.time()
-        _cached_connected_set[cache_key] = cache_smembers(
-            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}"
+        _cached_connected_set[cache_key] = await asyncio.to_thread(
+            cache_smembers,
+            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
         )
     logger.info(
         "Loaded %d MCP tool(s): %s (cached for %.0fs, user=%s)",
