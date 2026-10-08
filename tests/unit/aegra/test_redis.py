@@ -146,9 +146,9 @@ class TestCacheSrem:
 
 
 class TestCacheSmembers:
-    def test_returns_empty_set_when_no_client(self):
+    def test_returns_none_when_no_client(self):
         with patch("deep_agent.aegra.redis.get_redis_client", return_value=None):
-            assert cache_smembers("key") == set()
+            assert cache_smembers("key") is None
 
     def test_returns_members_on_success(self):
         mock_client = MagicMock()
@@ -156,11 +156,11 @@ class TestCacheSmembers:
         redis_mod._client = mock_client
         assert cache_smembers("key") == {"a", "b"}
 
-    def test_returns_empty_set_on_error(self):
+    def test_returns_none_on_error(self):
         mock_client = MagicMock()
         mock_client.smembers.side_effect = Exception("fail")
         redis_mod._client = mock_client
-        assert cache_smembers("key") == set()
+        assert cache_smembers("key") is None
 
     def test_returns_empty_set_when_key_missing(self):
         mock_client = MagicMock()

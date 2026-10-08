@@ -170,16 +170,16 @@ def cache_srem(key: str, value: str) -> bool:
         return False
 
 
-def cache_smembers(key: str) -> set[str]:
-    """Return all members of a Redis set. Returns empty set on error."""
+def cache_smembers(key: str) -> set[str] | None:
+    """Return all members of a Redis set, or None on error."""
     client = get_redis_client()
     if client is None:
-        return set()
+        return None
     try:
         return client.smembers(f"{REDIS_KEY_PREFIX}{key}") or set()
     except Exception:
         logger.debug("SMEMBERS failed for key '%s'", key, exc_info=True)
-        return set()
+        return None
 
 
 _RELEASE_LOCK_LUA = """

@@ -786,6 +786,8 @@ async def get_mcp_tools(
             cache_smembers,
             f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
         )
+        if redis_set is None:
+            return cached
         local_set = _cached_connected_set.get(cache_key, set())
         if redis_set == local_set:
             logger.info(
@@ -897,7 +899,11 @@ async def get_mcp_tools(
     if cache_key is not None:
         _cached_tools[cache_key] = tools
         _cached_tools_ts[cache_key] = time.time()
-        _cached_connected_set[cache_key] = pre_discovery_set or set()
+        _cached_connected_set[cache_key] = (
+            pre_discovery_set
+            if pre_discovery_set is not None
+            else _cached_connected_set.get(cache_key, set())
+        )
     logger.info(
         "Loaded %d MCP tool(s): %s (cached for %.0fs, user=%s)",
         len(tools),
