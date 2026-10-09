@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import html
@@ -335,7 +336,8 @@ async def handle_mcp_oauth_callback(
         expires_at=expires_at,
         scopes=scopes,
     )
-    cache_sadd(
+    await asyncio.to_thread(
+        cache_sadd,
         f"mcp_auth_set:{current_agent_name}:{user_id}",
         mcp_name,
         ttl_seconds=_MCP_AUTH_SET_TTL,
@@ -463,7 +465,11 @@ async def handle_mcp_disconnect(user_id: str, mcp_name: str) -> dict[str, Any]:
 
     store = McpTokenStore(settings.database_uri)
     await store.delete_token(settings.agent_deployment_id, user_id, mcp_name)
-    cache_srem(f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}", mcp_name)
+    await asyncio.to_thread(
+        cache_srem,
+        f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
+        mcp_name,
+    )
     get_mcp_credential_resolver().invalidate_cache(user_id, mcp_name)
     from deep_agent.aegra.mcp import invalidate_mcp_tool_cache
 

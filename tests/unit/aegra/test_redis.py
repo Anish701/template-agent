@@ -119,7 +119,7 @@ class TestCacheSadd:
         mock_client = MagicMock()
         redis_mod._client = mock_client
         assert cache_sadd("key", "val") is True
-        mock_client.sadd.assert_called_once()
+        mock_client.sadd.assert_called_once_with("aegra:key", "val")
 
     def test_returns_false_on_error(self):
         mock_client = MagicMock()
@@ -131,7 +131,7 @@ class TestCacheSadd:
         mock_client = MagicMock()
         redis_mod._client = mock_client
         assert cache_sadd("key", "val", ttl_seconds=604800) is True
-        mock_client.sadd.assert_called_once()
+        mock_client.sadd.assert_called_once_with("aegra:key", "val")
         mock_client.expire.assert_called_once_with("aegra:key", 604800)
 
     def test_no_expire_when_ttl_omitted(self):
@@ -150,7 +150,7 @@ class TestCacheSrem:
         mock_client = MagicMock()
         redis_mod._client = mock_client
         assert cache_srem("key", "val") is True
-        mock_client.srem.assert_called_once()
+        mock_client.srem.assert_called_once_with("aegra:key", "val")
 
     def test_returns_false_on_error(self):
         mock_client = MagicMock()
@@ -169,6 +169,7 @@ class TestCacheSmembers:
         mock_client.smembers.return_value = {"a", "b"}
         redis_mod._client = mock_client
         assert cache_smembers("key") == {"a", "b"}
+        mock_client.smembers.assert_called_once_with("aegra:key")
 
     def test_returns_none_on_error(self):
         mock_client = MagicMock()
