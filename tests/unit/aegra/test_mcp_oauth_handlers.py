@@ -247,7 +247,9 @@ class TestHandleMcpOauthCallback:
         assert response.status_code == 200
         assert b"Connected" in response.body
         assert b"mcp_oauth_done" in response.body
-        mock_sadd.assert_called_once_with("mcp_auth_set:test-agent:user-1", "oauth-mcp")
+        mock_sadd.assert_called_once_with(
+            "mcp_auth_set:test-agent:user-1", "oauth-mcp", ttl_seconds=604800
+        )
 
     async def test_ok_false_returns_error_with_message(self):
         state_payload = json.dumps(

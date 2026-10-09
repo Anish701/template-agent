@@ -144,13 +144,15 @@ def cache_delete(key: str) -> bool:
         return False
 
 
-def cache_sadd(key: str, value: str) -> bool:
-    """Add a value to a Redis set. Returns False on error."""
+def cache_sadd(key: str, value: str, ttl_seconds: int | None = None) -> bool:
+    """Add a value to a Redis set. Optionally set/refresh key TTL."""
     client = get_redis_client()
     if client is None:
         return False
     try:
         client.sadd(f"{REDIS_KEY_PREFIX}{key}", value)
+        if ttl_seconds is not None:
+            client.expire(f"{REDIS_KEY_PREFIX}{key}", ttl_seconds)
         return True
     except Exception:
         logger.debug("SADD failed for key '%s'", key, exc_info=True)
@@ -180,6 +182,19 @@ def cache_smembers(key: str) -> set[str] | None:
     except Exception:
         logger.debug("SMEMBERS failed for key '%s'", key, exc_info=True)
         return None
+
+
+def cache_expire(key: str, ttl_seconds: int) -> bool:
+    """Set or refresh the TTL on an existing key. Returns False on error."""
+    client = get_redis_client()
+    if client is None:
+        return False
+    try:
+        client.expire(f"{REDIS_KEY_PREFIX}{key}", ttl_seconds)
+        return True
+    except Exception:
+        logger.debug("EXPIRE failed for key '%s'", key, exc_info=True)
+        return False
 
 
 _RELEASE_LOCK_LUA = """

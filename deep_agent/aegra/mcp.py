@@ -45,6 +45,7 @@ _SSO_TOKEN_URL: str = ""
 _mcp_breaker: CircuitBreaker | None = None
 
 _MCP_TOOL_CACHE_TTL: float = float(agent_config.get_cache_config().mcp.ttl)
+_MCP_AUTH_SET_TTL: int = 604800  # 7 days
 _cached_tools: dict[str | None, list[Any]] = {}
 _cached_tools_ts: dict[str | None, float] = {}
 _cached_connected_set: dict[str | None, set[str]] = {}
@@ -779,15 +780,15 @@ async def get_mcp_tools(
     cached = _cached_tools.get(cache_key) if cache_key else None
     cached_ts = _cached_tools_ts.get(cache_key, 0.0) if cache_key else 0.0
 
-    from deep_agent.aegra.redis import cache_smembers
+    from deep_agent.aegra.redis import cache_expire, cache_smembers
+
+    auth_set_key = f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}"
 
     if cached and len(cached) > 0 and (time.time() - cached_ts) < _MCP_TOOL_CACHE_TTL:
-        redis_set = await asyncio.to_thread(
-            cache_smembers,
-            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
-        )
+        redis_set = await asyncio.to_thread(cache_smembers, auth_set_key)
         if redis_set is None:
             return cached
+        await asyncio.to_thread(cache_expire, auth_set_key, _MCP_AUTH_SET_TTL)
         local_set = _cached_connected_set.get(cache_key, set())
         if redis_set == local_set:
             logger.info(
@@ -824,10 +825,7 @@ async def get_mcp_tools(
     )
 
     pre_discovery_set = (
-        await asyncio.to_thread(
-            cache_smembers,
-            f"mcp_auth_set:{settings.agent_deployment_id}:{user_id}",
-        )
+        await asyncio.to_thread(cache_smembers, auth_set_key)
         if cache_key is not None
         else None
     )

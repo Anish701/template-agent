@@ -30,6 +30,8 @@ from deep_agent.src.agent.config import agent_config
 from deep_agent.src.settings import settings
 from deep_agent.utils.pylogger import get_python_logger
 
+_MCP_AUTH_SET_TTL: int = 604800  # 7 days
+
 logger = get_python_logger()
 
 _OAUTH_STATE_TTL_SECONDS = 300
@@ -333,7 +335,11 @@ async def handle_mcp_oauth_callback(
         expires_at=expires_at,
         scopes=scopes,
     )
-    cache_sadd(f"mcp_auth_set:{current_agent_name}:{user_id}", mcp_name)
+    cache_sadd(
+        f"mcp_auth_set:{current_agent_name}:{user_id}",
+        mcp_name,
+        ttl_seconds=_MCP_AUTH_SET_TTL,
+    )
     get_mcp_credential_resolver().invalidate_cache(user_id, mcp_name)
     from deep_agent.aegra.mcp import invalidate_mcp_tool_cache
 
