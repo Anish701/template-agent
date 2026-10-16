@@ -6,6 +6,7 @@ application and merges core LangGraph Platform routes onto.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -15,6 +16,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from deep_agent.aegra.auth_helpers import authenticated_user_id
 from deep_agent.aegra.eval_routes import eval_mgmt_router
 from deep_agent.aegra.eval_routes import router as eval_router
 from deep_agent.aegra.feedback import feedback_router
@@ -28,6 +30,7 @@ from deep_agent.aegra.security_middleware import (
 )
 from deep_agent.aegra.thread_cleanup import thread_cleanup_router
 from deep_agent.aegra.upload_routes import upload_router
+from deep_agent.src.agent.config import agent_config
 from deep_agent.src.settings import settings
 from deep_agent.utils.pylogger import (
     bind_request_context,
@@ -233,3 +236,37 @@ def version() -> dict[str, str]:
     from deep_agent.aegra import __version__
 
     return {"service": "template-agent", "version": __version__}
+
+
+@app.get("/config/agent-structure")
+async def agent_structure(request: Request) -> dict:
+    """Return the agent structure in a dict from config."""
+    await authenticated_user_id(request)
+    name: str = agent_config.get_name()
+
+    orchestrator: dict[str, Any] = copy.deepcopy(agent_config.get_orchestrator_config())
+    orchestrator.pop("body", None)
+    orchestrator.pop("skill_paths", None)
+
+    subagents: dict[str, dict[str, Any]] = copy.deepcopy(
+        agent_config.get_all_subagent_configs()
+    )
+    for key in subagents:
+        subagents[key].pop("body", None)
+        subagents[key].pop("skill_paths", None)
+
+    mcp_servers: dict[str, Any] = copy.deepcopy(agent_config.get_mcp_servers())
+    for key in mcp_servers:
+        mcp_servers[key].pop("ssl_verify", None)
+        mcp_servers[key].pop("oauth", None)
+        mcp_servers[key].pop("auth_env_var", None)
+
+    available_skills: list[str] = copy.deepcopy(agent_config.get_available_skills())
+
+    return {
+        "name": name,
+        "orchestrator": orchestrator,
+        "subagents": subagents,
+        "mcp_servers": mcp_servers,
+        "available_skills": available_skills,
+    }
