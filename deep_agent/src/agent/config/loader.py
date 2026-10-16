@@ -112,6 +112,7 @@ class AgentConfig:
     _subagents: dict[str, dict[str, Any]]
     _mcp_servers: dict[str, Any]
     _available_skills: dict[str, Path]
+    _skills: dict[str, dict[str, Any]]
     _middleware_config: MiddlewareFileConfig
     _filesystem_config: FilesystemFileConfig
     _providers_config: ProvidersFileConfig
@@ -301,6 +302,7 @@ class AgentConfig:
         self._name = raw.get("name", "Agent")
         # Scan skills first, as orchestrator and subagents need them for resolution
         self._available_skills: dict[str, Path] = self._scan_available_skills()
+        self._skills: dict[str, dict[str, Any]] = self._load_skills()
         self._model_configs: dict[str, dict[str, Any]] = self._load_model_configs()
         self._orchestrator: dict[str, Any] = self._load_orchestrator()
         self._subagents: dict[str, dict[str, Any]] = self._load_all_subagents()
@@ -600,6 +602,31 @@ class AgentConfig:
         logger.info(f"Scanned {len(skills)} available skill(s)")
         return skills
 
+    def _load_skills(self) -> dict[str, dict[str, Any]]:
+        """Load each skill's frontmatter and Markdown instructions.
+
+        Returns:
+            Dict of skill configurations.
+        """
+        skills: dict[str, dict[str, Any]] = {}
+        for skill_name, skill_path in self._available_skills.items():
+            skill_file = skill_path / "SKILL.md"
+            if not skill_file.is_file():
+                logger.warning(
+                    "Skill '%s' has no SKILL.md; skipping metadata", skill_name
+                )
+                continue
+
+            try:
+                skill = parse_frontmatter(skill_file)
+                skill.setdefault("name", skill_name)
+                skills[skill_name] = skill
+            except Exception as e:
+                logger.warning("Failed to load skill '%s': %s", skill_name, e)
+
+        logger.info("Loaded %d skill configuration(s)", len(skills))
+        return skills
+
     def get_orchestrator_config(self) -> dict[str, Any]:
         """Get the pre-loaded orchestrator configuration.
 
@@ -656,14 +683,15 @@ class AgentConfig:
         self._ensure_loaded()
         return self._mcp_servers
 
-    def get_available_skills(self) -> list[str]:
-        """Get the available skills in the agent configuration.
+    def get_available_skills(self) -> dict[str, dict[str, Any]]:
+        """Get loaded skill metadata and Markdown instructions by skill name.
 
         Returns:
-            Dict of available skills.
+            Dict mapping each skill directory name to its parsed frontmatter and
+            ``body`` content from ``SKILL.md``.
         """
         self._ensure_loaded()
-        return list(self._available_skills.keys())
+        return self._skills
 
     def get_providers_config(self) -> ProvidersFileConfig:
         """Get the pre-loaded providers configuration.

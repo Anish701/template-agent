@@ -1,7 +1,8 @@
 """Unit tests for agent_config skill path resolution."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from deep_agent.src.agent.config import AgentConfig
 from deep_agent.src.exceptions import AppException
@@ -40,6 +41,37 @@ Test orchestrator prompt.
         assert "skill_paths" in orchestrator
         assert len(orchestrator["skill_paths"]) == 1
         assert "client-intake" in orchestrator["skill_paths"][0]
+
+    def test_available_skills_include_frontmatter_and_instructions(self, tmp_path):
+        """Skill details retain the SKILL.md data instead of only its path/name."""
+        config_dir = tmp_path / "agent_config"
+        skill_dir = config_dir / "skills" / "client-intake"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("""---
+name: Client intake
+description: Normalizes client measurements.
+category: health
+---
+# Client Intake
+
+Use these instructions to collect measurements.
+""")
+        (config_dir / "PROMPT.md").write_text("""---
+name: orchestrator
+---
+Orchestrator instructions.
+""")
+
+        skills = AgentConfig(config_dir).get_available_skills()
+
+        assert skills == {
+            "client-intake": {
+                "name": "Client intake",
+                "description": "Normalizes client measurements.",
+                "category": "health",
+                "body": "# Client Intake\n\nUse these instructions to collect measurements.",
+            }
+        }
 
     def test_subagent_loads_with_skill_paths(self, tmp_path):
         """Test that subagent configs include resolved skill paths."""

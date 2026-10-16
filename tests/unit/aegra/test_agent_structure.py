@@ -8,18 +8,18 @@ from deep_agent.aegra import http_app
 
 
 def test_agent_structure_returns_sanitized_configuration(monkeypatch) -> None:
-    """The endpoint exposes graph metadata without prompt or auth internals."""
+    """The endpoint exposes configuration while omitting sensitive MCP fields."""
     orchestrator = {
         "name": "orchestrator",
         "skills": ["client-intake"],
-        "body": "This system prompt must not be exposed.",
+        "body": "This system prompt is returned for developer inspection.",
         "skill_paths": {"client-intake": "/app/config/agent/skills/client-intake"},
     }
     subagents = {
         "analyst": {
             "name": "analyst",
             "skills": ["bmi-report"],
-            "body": "This subagent prompt must not be exposed.",
+            "body": "This subagent prompt is returned for developer inspection.",
             "skill_paths": {"bmi-report": "/app/config/agent/skills/bmi-report"},
         }
     }
@@ -48,7 +48,17 @@ def test_agent_structure_returns_sanitized_configuration(monkeypatch) -> None:
     monkeypatch.setattr(
         http_app.agent_config,
         "get_available_skills",
-        lambda: ["client-intake", "bmi-report"],
+        lambda: {
+            "client-intake": {
+                "name": "client-intake",
+                "description": "Collects and normalizes measurements.",
+                "body": "# Client Intake\n\nInstructions for this skill.",
+            },
+            "bmi-report": {
+                "name": "bmi-report",
+                "body": "# BMI Report\n\nInstructions for this skill.",
+            },
+        },
     )
 
     response = TestClient(http_app.app).get("/config/agent-structure")
@@ -56,9 +66,17 @@ def test_agent_structure_returns_sanitized_configuration(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "name": "orchestrator",
-        "orchestrator": {"name": "orchestrator", "skills": ["client-intake"]},
+        "orchestrator": {
+            "name": "orchestrator",
+            "skills": ["client-intake"],
+            "body": "This system prompt is returned for developer inspection.",
+        },
         "subagents": {
-            "analyst": {"name": "analyst", "skills": ["bmi-report"]},
+            "analyst": {
+                "name": "analyst",
+                "skills": ["bmi-report"],
+                "body": "This subagent prompt is returned for developer inspection.",
+            },
         },
         "mcp_servers": {
             "search": {
@@ -66,7 +84,17 @@ def test_agent_structure_returns_sanitized_configuration(monkeypatch) -> None:
                 "transport": "streamable_http",
             },
         },
-        "available_skills": ["client-intake", "bmi-report"],
+        "available_skills": {
+            "client-intake": {
+                "name": "client-intake",
+                "description": "Collects and normalizes measurements.",
+                "body": "# Client Intake\n\nInstructions for this skill.",
+            },
+            "bmi-report": {
+                "name": "bmi-report",
+                "body": "# BMI Report\n\nInstructions for this skill.",
+            },
+        },
     }
 
     # The endpoint works from copies and must not mutate the cached config.
